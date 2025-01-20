@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools"] 
+build-backend = "setuptools.build_meta" 
+
+
+[project]
+name = "curl_adapter"
+version = "1.0.0b1"
+description = "A curl HTTP adapter switch for requests library — make browser-like requests with custom TLS fingerprints."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [{name = "Elis K.", email = "github@elis.cc"}]
+keywords = ["curl", "requests", "adapter", "tls fingerprint", "pycurl", "curl_cffi", "curl impersonate"]
+dependencies = [
+    "requests",
+    "curl_cffi",
+    "pycurl==7.45.3" #only this version supports python 3.8 on windows
+]
+
+[project.urls]
+"Homepage" = "https://github.com/el1s7/curl-adapter"
+
+
+[project.optional-dependencies]
+test = ["pytest"]

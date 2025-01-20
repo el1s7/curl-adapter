@@ -1,0 +1,3 @@
+exclude tests/*
+exclude .pytest_cache
+exclude .venv
