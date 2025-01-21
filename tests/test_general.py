@@ -20,7 +20,6 @@ class TestFunctions:
 			assert r.status_code == 200
 			assert r.json()["gzipped"]
 
-
 	def test_gzip_python(self, curl_adapter):
 
 		with requests.Session() as s:
@@ -32,13 +31,16 @@ class TestFunctions:
 
 	def test_brotli(self, curl_adapter):
 		# This fails for PyCurl because PyCurl doesn't support brotli decoding by itself.
+		
+		if curl_adapter is PyCurlAdapter:
+			pytest.skip("PyCurl because PyCurl doesn't support brotli decoding by itself.")
+		
 		with requests.Session() as s:
 			s.mount("http://", curl_adapter(use_curl_content_decoding=True))
 			s.mount("https://", curl_adapter(use_curl_content_decoding=True))
 			r = s.get("https://httpbin.org/brotli")
 			assert r.status_code == 200
 			assert r.json()["brotli"]
-
 
 	def test_brotli_python(self, curl_adapter):
 
@@ -48,7 +50,6 @@ class TestFunctions:
 			r = s.get("https://httpbin.org/brotli")
 			assert r.status_code == 200
 			assert r.json()["brotli"]
-
 
 	def test_raw_response(self, curl_adapter):
 		with requests.Session() as s:
@@ -68,14 +69,12 @@ class TestFunctions:
 
 			assert size1 > size2
 
-
 	def test_redirects(self, curl_adapter):
 		with requests.Session() as s:
 			s.mount("http://", curl_adapter())
 			s.mount("https://", curl_adapter())
 			r = s.get("https://httpbin.org/absolute-redirect/3")
 			assert r.status_code == 200
-
 
 	def test_relative_redirects(self, curl_adapter):
 		with requests.Session() as s:
@@ -97,7 +96,6 @@ class TestFunctions:
 
 			assert curl_request.json()["ja3_hash"] != normal_request.json()["ja3_hash"]
 
-
 	def test_cookies(self, curl_adapter):
 		with requests.Session() as s:
 			s.mount("http://", curl_adapter())
@@ -114,7 +112,6 @@ class TestFunctions:
 			assert s.cookies.get("cookie1") == "one"
 			assert s.cookies.get("cookie2") == "two"
 			assert s.cookies.get("cookie3") == "three"
-
 
 	def test_curl_info(self, curl_adapter):
 		with requests.Session() as s:

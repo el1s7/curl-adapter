@@ -1,3 +1,4 @@
 exclude tests/*
 exclude .pytest_cache
 exclude .venv
+exclude other/*

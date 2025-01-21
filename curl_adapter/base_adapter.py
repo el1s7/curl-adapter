@@ -347,7 +347,7 @@ class BaseCurlAdapter(BaseAdapter):
 		response.encoding = get_encoding_from_headers(response.headers)
 		response.raw = res
 		
-		response.reason = parsed_headers["headers"]
+		response.reason = parsed_headers["reason"]
 
 		response.get_curl_info = get_curl_info
 
@@ -480,8 +480,6 @@ class BaseCurlAdapter(BaseAdapter):
 		#already handled
 	
 		# files
-		#already handled
-		# multipart
 		#already handled
 
 		# auth

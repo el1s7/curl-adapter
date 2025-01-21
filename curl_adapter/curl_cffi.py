@@ -47,6 +47,7 @@ class CurlCffiAdapter(BaseCurlAdapter):
 			"""
 				Currently, curl_cfii doesn't work for retriving information like TOTAL_TIME_T, SPEED_DOWNLOAD_T,
 				because they haven't mapped the all option codes. (These options start at 0x600000 int64_t, but curl_cfii maps only up to 0x400000...)
+				I made a pull request to fix it: https://github.com/lexiforest/curl_cffi/pull/481 (but as of now it's not merged yet)
 			"""
 			c_value = ffi.new("int64_t*")
 			value = lib.curl_easy_getinfo(curl._curl, option_code, c_value)
@@ -59,7 +60,9 @@ class CurlCffiAdapter(BaseCurlAdapter):
 
 	def set_ja3_options(self, curl: curl_cffi.Curl, ja3: str, permute: bool = False):
 		"""
-		Detailed explanation: https://engineering.salesforce.com/tls-fingerprinting-with-ja3-and-ja3s-247362855967/
+			function sourced from: https://github.com/lexiforest/curl_cffi/blob/main/curl_cffi/requests/utils.py
+
+			Detailed explanation: https://engineering.salesforce.com/tls-fingerprinting-with-ja3-and-ja3s-247362855967/
 		"""
 
 		def toggle_extensions_by_ids(curl: curl_cffi.Curl, extension_ids):
@@ -128,7 +131,9 @@ class CurlCffiAdapter(BaseCurlAdapter):
 
 	def set_akamai_options(self, curl: curl_cffi.Curl, akamai: str):
 		"""
-		Detailed explanation: https://www.blackhat.com/docs/eu-17/materials/eu-17-Shuster-Passive-Fingerprinting-Of-HTTP2-Clients-wp.pdf
+			function sourced from: https://github.com/lexiforest/curl_cffi/blob/main/curl_cffi/requests/utils.py
+
+			Detailed explanation: https://www.blackhat.com/docs/eu-17/materials/eu-17-Shuster-Passive-Fingerprinting-Of-HTTP2-Clients-wp.pdf
 		"""
 		settings, window_update, streams, header_order = akamai.split("|")
 		

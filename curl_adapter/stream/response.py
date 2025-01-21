@@ -17,7 +17,7 @@ from .handler import CurlStreamHandler
 
 class BytesQueueBuffer:
     """
-	Needed to support newer versions of urllib3
+	this class is sourced from urllib3 HTTPResponse. It's needed to support newer versions of urllib3
 	------------------------------------------
 	Memory-efficient bytes buffer
 
@@ -130,7 +130,7 @@ class CurlStreamResponse(HTTPResponse):
 		version=None, #HTTP Version header
 
 		preload_content=False,
-		enforce_content_length=False,
+		enforce_content_length=True,
 		auto_close=True,
 	):
 
@@ -155,6 +155,11 @@ class CurlStreamResponse(HTTPResponse):
 
 		self.decode_content = self._handle_content_decoding
 		self.enforce_content_length = enforce_content_length
+
+		if not self._handle_content_decoding:
+			# In cases when curl is handling content decoding, disable content length checks otherwise we might get unexcepted errors
+			self.enforce_content_length = False
+		
 		self.auto_close = auto_close
 
 		self._decoder = None

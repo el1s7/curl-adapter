@@ -1,14 +1,17 @@
 # Curl Adapter
-A module that plugs straight-in to the python *[requests](https://github.com/psf/requests)* library and replaces the default *urllib3* HTTP adapter with cURL.
+![PyPI - Downloads](https://img.shields.io/pypi/dw/curl-adapter)
+
+A module that plugs straight-in to the python *[requests](https://github.com/psf/requests)* library and replaces the default *urllib3* HTTP adapter with **cURL**,  equipped with TLS fingerprint changing capabilities.
 
 ## Why?
 
 Specifically, this module is meant to be used with the "curl impersonate" python bindings ([lexiforest/curl_cffi](https://github.com/lexiforest/curl_cffi)), in order to send HTTP requests with custom, browser-like TLS & HTTP/2 fingerprints for bypassing sites that detect and block normal python requests (such as [Cloudflare](https://www.nstbrowser.io/en/blog/how-does-cloudflare-detect-bots) for example).
+
 <details>
   <summary>Note</summary>
 Even though <i><a href="https://github.com/lexiforest/curl_cffi">curl_cffi</a></i> already has an API that *mimicks* the <i>requests</i>  library, it comes with some compatibility issues (e.g. response.raw not available, response.history, differences in headers, cookies, json, etc.).
 <br><br>
-    With curl adapter, instead of copying and mimicking the <i>requests</i> library API, just the low level HTTP adapter is changed, and everything else is exactly the same (even the exceptions). 
+    With curl adapter, instead of copying and mimicking the <i>requests</i> library API, the low level HTTP adapter is changed with a custom crafted one, and everything else is exactly the same (even the exceptions are mapped). 
 <br><br>
 With a single switch you can enable/disable curl for your requests, without needing to worry about changing the way you normally work with requests.
 <br><br>
@@ -63,7 +66,7 @@ with requests.Session() as s:
 ```
 
 ## More
-You can get extra information from curl response info:
+You can get extra information from the curl response info:
 ```python
 import requests
 from curl_adapter import PyCurlAdapter, CurlInfo

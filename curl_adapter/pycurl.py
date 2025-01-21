@@ -42,7 +42,8 @@ class PyCurlAdapter(BaseCurlAdapter):
 		super().set_curl_options(curl, request, url, timeout, proxies)
 		
 		if self.use_curl_content_decoding:
-			# For some reason pycurl content decoding can only be enabled like this:
-			curl.setopt(pycurl.HTTP_CONTENT_DECODING, 0)
+			# It's better to use the urllib3 content decoding instead of letting PyCurl, because it's limited.
+			
+			# curl.setopt(pycurl.HTTP_CONTENT_DECODING, 0). There was a time when it needed to disable this in order for it's own encoding to work, weirdly. Though now it doesn't seem neccessary?
 			curl.setopt(pycurl.ENCODING, "gzip, deflate") #br, zstd not supported...
-			# Seems it better to use the urllib3 content decoding instead of automatic
+			
