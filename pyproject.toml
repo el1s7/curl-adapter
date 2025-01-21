@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "curl_adapter"
-version = "1.0.0"
+version = "1.0.0.post1"
 description = "A curl HTTP adapter switch for requests library — make browser-like requests with custom TLS fingerprints."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -25,5 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest"]
 
-[tool.setuptools]
-py-modules = ["curl_adapter"]
+
+[tool.setuptools.packages.find]
+include = ["curl_adapter"]
+exclude = ["other"]
