@@ -1,5 +1,5 @@
 # Curl Adapter
-![PyPI - Downloads](https://img.shields.io/pypi/dw/curl-adapter)
+[![PyPI Downloads](https://static.pepy.tech/badge/curl-adapter/month)](https://pepy.tech/projects/curl-adapter)
 
 A module that plugs straight-in to the python *[requests](https://github.com/psf/requests)* library and replaces the default *urllib3* HTTP adapter with **cURL**,  equipped with TLS fingerprint changing capabilities.
 
@@ -22,7 +22,9 @@ Though, if you're looking for async support or websockets, you should definitely
 Additionally, you can even use curl adapter with [pycurl](https://github.com/pycurl/pycurl). 
 
 ## Installation
-`pip install curl_adapter`
+```console
+pip install curl-adapter --upgrade --ignore-installed
+```
 
 ## Usage
 Basic example:
