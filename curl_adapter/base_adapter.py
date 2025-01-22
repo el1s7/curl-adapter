@@ -566,9 +566,6 @@ class BaseCurlAdapter(BaseAdapter):
 			# Headers are available, parse them
 			parsed_headers = self.parse_headers(self.current_curl, header_buffer)
 
-			# Headers have been parsed, allow cleaning up
-			start_curl_stream.set_headers_parsed()
-
 			curl_stream_res = CurlStreamResponse(
 				url=url,
 				method=request.method.upper(),

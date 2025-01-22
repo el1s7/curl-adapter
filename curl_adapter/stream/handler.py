@@ -1,11 +1,43 @@
 from concurrent.futures import ThreadPoolExecutor
 import queue
+import sys
 import threading
 import typing
-
 import pycurl
 import curl_cffi.curl
 from curl_cffi.curl import CurlOpt, CurlError
+
+def _detect_environment() -> typing.Tuple[str, typing.Callable]:
+	## -eventlet-
+	if "eventlet" in sys.modules:
+		try:
+			import eventlet
+			from eventlet.patcher import is_monkey_patched as is_eventlet
+			import socket
+
+			if is_eventlet(socket):
+				def executor(func):
+					return eventlet.tpool.execute(func)
+
+				return ("eventlet", executor)
+		except ImportError:
+			pass
+
+	# -gevent-
+	if "gevent" in sys.modules:
+		try:
+			import gevent
+			from gevent import socket as _gsocket
+			import socket
+
+			if socket.socket is _gsocket.socket:
+				def executor(func):
+					gevent.get_hub().threadpool.spawn(func).get()
+				return ("gevent", executor)
+		except ImportError:
+			pass
+
+	return ("default", None)
 
 class CurlStreamHandler():
 	"""
@@ -14,8 +46,9 @@ class CurlStreamHandler():
 		:copyright: (c) 2025 by Elis K.
 	"""
 
+	_THREAD_ENV = _detect_environment()
 
-	def __init__(self, curl_instance: typing.Union[curl_cffi.Curl, pycurl.Curl], executor: ThreadPoolExecutor=None, callback_after_perform=None):
+	def __init__(self, curl_instance: typing.Union[curl_cffi.Curl, pycurl.Curl], executor: ThreadPoolExecutor=None, callback_after_perform=None, debug=False):
 		'''
 			Initialize the stream handler.
 		'''
@@ -27,10 +60,11 @@ class CurlStreamHandler():
 		self._future = None  # To track the task execution
 		self.closed = False
 		self.initialized = threading.Event() #Event to set when we receive the first bytes of body, that's how we know that the headers are ready
-		self.allow_cleanup = threading.Event()
 		self.perform_finished = threading.Event()
 		self.callback_after_perform = callback_after_perform
 		self._leftover = bytearray()  # buffer for leftover data when chunk > requested
+
+		self.debug = debug
 
 	def _write_callback(self, chunk):
 		'''
@@ -45,20 +79,24 @@ class CurlStreamHandler():
 		return len(chunk)
 
 	def _download(self):
-
-		# Possible to set buffer size here
-		# self.curl.setopt(CurlOpt.BUFFERSIZE, 8 * 1024)
-		self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
-
 		try:
+			# Possible to set buffer size as well
+			# self.curl.setopt(CurlOpt.BUFFERSIZE, 8 * 1024)
+			self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
 			self.curl.perform()
-		except (CurlError, pycurl.error) as e:
+		
+		except Exception as e: #(CurlError, pycurl.error)
 			self.error = e
 		finally:
 			self.chunk_queue.put(None)  # End of stream
 
-			if self.callback_after_perform and callable(self.callback_after_perform):
-				self.callback_after_perform()
+			try:
+				if self.callback_after_perform and callable(self.callback_after_perform):
+					self.callback_after_perform()
+			except Exception as e:
+				if self.debug:
+					print(e)
+				pass
 			
 			self.perform_finished.set()
 
@@ -66,12 +104,14 @@ class CurlStreamHandler():
 			if not self.initialized.is_set():
 				self.initialized.set()
 
-			
 	def start(self):
-		self._future = self.executor.submit(self._download)
-		if self.error:
-			raise self.error
+		thread_type, thread_executor = self._THREAD_ENV
 
+		if thread_type == "gevent" or thread_type == "eventlet":
+			thread_executor(self._download)
+		else:
+			self._future = self.executor.submit(self._download)
+		
 		return self
 
 	def wait_for_headers(self):
@@ -80,9 +120,6 @@ class CurlStreamHandler():
 		'''
 		self.initialized.wait()
 		return self
-
-	def set_headers_parsed(self):
-		return self.allow_cleanup.set()
 
 	def read(self, amt=None):
 		"""
@@ -198,15 +235,17 @@ class CurlStreamHandler():
 		if self.closed:
 			return
 		
-		self.closed = True
-
 		self.quit_event.set()
 		if self._future:
 			self._future.result()  # Ensure the task completes
 
 		# Clean up curl handle if needed
 		# self.curl.close()
-		self.allow_cleanup.wait(timeout=1)
+		if not self.perform_finished.is_set():
+			self.perform_finished.wait()
+
+		self.closed = True
+
 		self.curl.reset()
 			
 	def __del__(self):
