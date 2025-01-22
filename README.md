@@ -1,7 +1,7 @@
 # Curl Adapter
-[![PyPI Downloads](https://static.pepy.tech/badge/curl-adapter/month)](https://pepy.tech/projects/curl-adapter)
+[![PyPI Downloads](https://static.pepy.tech/badge/curl-adapter/month)](https://pypi.org/project/curl-adapter/)
 
-A module that plugs straight-in to the python *[requests](https://github.com/psf/requests)* library and replaces the default *urllib3* HTTP adapter with **cURL**,  equipped with TLS fingerprint changing capabilities.
+A module that plugs directly into the Python *[requests](https://github.com/psf/requests)* library and replaces the default *urllib3* HTTP adapter with **cURL**,  equipped with TLS fingerprint-changing capabilities.
 
 ## Why?
 
