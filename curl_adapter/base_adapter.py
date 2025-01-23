@@ -8,30 +8,12 @@ from typing import TypedDict
 import typing
 import warnings
 
-from urllib3.exceptions import (
-	IncompleteRead
-)
 from urllib3.util import parse_url
 from urllib3.response import HTTPResponse
 from urllib3._collections import HTTPHeaderDict
 
 import requests
-from requests.exceptions import (
-	RequestException,
-	ConnectionError,
-	ConnectTimeout,
-	InvalidHeader,
-	InvalidProxyURL,
-	InvalidSchema,
-	InvalidURL,
-	ProxyError,
-	ReadTimeout,
-	RetryError,
-	SSLError,
-	HTTPError,
-	TooManyRedirects,
-	ContentDecodingError
-)
+
 
 from requests.utils import (
 	DEFAULT_CA_BUNDLE_PATH,
@@ -48,7 +30,23 @@ from requests.structures import CaseInsensitiveDict
 from requests.cookies import extract_cookies_to_jar
 from requests.adapters import BaseAdapter
 from requests.models import Response
-
+from requests.exceptions import (
+	RequestException,
+	ConnectionError,
+	ConnectTimeout,
+	InvalidHeader,
+	InvalidProxyURL,
+	InvalidSchema,
+	InvalidURL,
+	ProxyError,
+	ReadTimeout,
+	RetryError,
+	SSLError,
+	HTTPError,
+	TooManyRedirects,
+	ContentDecodingError,
+	ChunkedEncodingError
+)
 import pycurl
 import curl_cffi.curl
 from curl_cffi.curl import CurlInfo as CurlInfoOpt, CurlOpt, CurlError 
@@ -199,7 +197,7 @@ class BaseCurlAdapter(BaseAdapter):
 			CurlECode.PROXY: ProxyError,
 			CurlECode.SSL_CLIENTCERT: SSLError,
 			CurlECode.ECH_REQUIRED: SSLError,
-			CurlECode.PARTIAL_FILE: IncompleteRead,
+			CurlECode.PARTIAL_FILE: ChunkedEncodingError,
 	}
 
 	def curl_error_map(self, error: typing.Union[CurlError, pycurl.error]):
