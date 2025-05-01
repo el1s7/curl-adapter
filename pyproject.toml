@@ -8,14 +8,14 @@ name = "curl_adapter"
 version = "1.0.0.post3"
 description = "A curl HTTP adapter switch for requests library — make browser-like requests with custom TLS fingerprints."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {file = "LICENSE"}
 authors = [{name = "Elis K.", email = "github@elis.cc"}]
 keywords = ["curl", "requests", "adapter", "tls fingerprint", "pycurl", "curl_cffi", "curl impersonate"]
 dependencies = [
     "requests",
     "curl_cffi",
-    "pycurl==7.45.3" #only this version supports python 3.8 on windows
+    "pycurl"
 ]
 
 [project.urls]
