@@ -123,6 +123,23 @@ class TestFunctions:
 			assert s.cookies.get("cookie2") == "two"
 			assert s.cookies.get("cookie3") == "three"
 
+	def test_post(self, curl_adapter):
+		with requests.Session() as s:
+			s.mount("http://", curl_adapter())
+			s.mount("https://", curl_adapter())
+
+			res = s.post(f"{test_server}/post", data={
+				"postkey": "postvalue"
+			}, allow_redirects=False)
+
+			assert res.json()["form"]["postkey"][0] == "postvalue"
+
+			res_json = s.post(f"{test_server}/post", json={
+				"postkey": "postvalue"
+			}, allow_redirects=False)
+
+			assert res_json.json()["json"]["postkey"] == "postvalue"
+
 	def test_curl_info(self, curl_adapter):
 		with requests.Session() as s:
 			s.mount("http://", curl_adapter())
