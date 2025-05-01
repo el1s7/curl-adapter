@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import TypedDict, List
 import warnings
 
 import curl_cffi.curl
@@ -17,6 +17,8 @@ from curl_cffi.requests.impersonate import (
 
 from .base_adapter import BaseCurlAdapter
 
+from requests.utils import CaseInsensitiveDict
+
 class CurlAdapterConfigurationOptions(TypedDict):
 	ja3_str: str
 	permute: bool
@@ -29,12 +31,15 @@ class CurlCffiAdapter(BaseCurlAdapter):
 			impersonate_browser_type: BrowserTypeLiteral="chrome", 
 			use_curl_content_decoding=False, 
 			use_thread_local_curl=True,
-			tls_configuration_options: CurlAdapterConfigurationOptions=None
+			tls_configuration_options: CurlAdapterConfigurationOptions=None,
+			header_order: List[str]=None
 		):
 
 		self.impersonate_browser_type = impersonate_browser_type
 		
 		self.configuration_options = tls_configuration_options
+
+		self.header_order = header_order
 
 		super().__init__(curl_cffi.Curl, debug, use_curl_content_decoding, use_thread_local_curl)
 
@@ -154,6 +159,17 @@ class CurlCffiAdapter(BaseCurlAdapter):
 	
 	def set_curl_options(self, curl, request, url, timeout, proxies):
 		
+		if self.header_order and isinstance(self.header_order, list):
+			# From Python 3.6 onwards, the standard dict type maintains insertion order by default.
+			# So no need to use lists here
+			ordered_headers = CaseInsensitiveDict()
+
+			current_header_list = request.headers.items()
+			sorted_current_header_list = sorted(current_header_list, )
+
+		
+
+
 		super().set_curl_options(curl, request, url, timeout, proxies)
 
 		# impersonate

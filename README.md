@@ -83,6 +83,7 @@ with requests.Session() as s:
         curl_info
     )
 ```
+Note that if you're streaming and reading a large body by chunks, it's better to call the `get_curl_info()` method _after_ the whole body has been read, since this method blocks until the body has been fully read in memory.
 
 Returns:
 ```python

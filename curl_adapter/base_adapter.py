@@ -4,6 +4,8 @@ import math
 import os
 import re
 import threading
+import time
+import traceback
 from typing import TypedDict
 import typing
 import warnings
@@ -52,9 +54,10 @@ import curl_cffi.curl
 from curl_cffi.curl import CurlInfo as CurlInfoOpt, CurlOpt, CurlError 
 from curl_cffi.const import CurlECode, CurlHttpVersion
 
-from .stream.handler import CurlStreamHandler
+from .stream.handler import CurlStreamHandler, _detect_environment
 from .stream.response import CurlStreamResponse
 
+_THREAD_ENV, _THREAD_SLEEP, _THREAD_EVENT = _detect_environment()
 
 class CurlInfo(TypedDict):
 	local_ip: str
@@ -71,6 +74,8 @@ class CurlInfo(TypedDict):
 
 class BaseCurlAdapter(BaseAdapter):
 	
+	_local = threading.local()
+
 	def __init__(self, 
 		curl_class: typing.Union[curl_cffi.Curl, pycurl.Curl],
 		debug=False, 
@@ -85,15 +90,12 @@ class BaseCurlAdapter(BaseAdapter):
 		self.use_thread_local_curl = use_thread_local_curl
 
 		if self.use_thread_local_curl:
-			self._local = threading.local()
 			self._local.curl = self.curl_class()
 		else:
 			self._curl = self.curl_class()
 
 		if self.debug:
 			self.enable_debug()
-
-		self._executor = None
 
 	@property
 	def curl(self) -> typing.Union[curl_cffi.Curl, pycurl.Curl]:
@@ -103,11 +105,16 @@ class BaseCurlAdapter(BaseAdapter):
 			return self._local.curl
 		return self._curl
 	
-	@property
-	def executor(self):
-		if self._executor is None:
-			self._executor = ThreadPoolExecutor()
-		return self._executor
+	def reset_curl(self):
+		'''
+			Close current handle and open a new curl handle
+		'''
+		self.curl.close()
+
+		if self.use_thread_local_curl:
+			self._local.curl = self.curl_class()
+		else:
+			self._curl = self.curl_class()
 
 	def enable_debug(self):
 		if self.debug:
@@ -154,7 +161,6 @@ class BaseCurlAdapter(BaseAdapter):
 		else:
 			curl.setopt(CurlOpt.SSL_VERIFYPEER, 0)
 			curl.setopt(CurlOpt.SSL_VERIFYHOST, 0)
-
 
 	CODE2ERROR = {
 			0: RequestException,
@@ -242,24 +248,14 @@ class BaseCurlAdapter(BaseAdapter):
 	def get_curl_info_callback(self,  curl: typing.Union[curl_cffi.Curl, pycurl.Curl]):
 		'''
 			Build a callback function for returning curl info object after perform is finished.
-			Doing it like this is non-blocking, otherwise every request would have to wait for perform to finish, and there would be no point in streaming/chunk reading.
 		'''
-		curl_info_ready = threading.Event()
-
 		def get_curl_info():
-			curl_info_ready.wait(timeout=5)
-
-			if not curl_info_ready.is_set():
-				warnings.warn("get_curl_info() method is a blocking call, it's only returned after the whole response body has been parsed. If you are streaming a HTTP response and reading it into chunks (e.g. downloading a file), it's better to call this method after reading the body.")
-				curl_info_ready.wait()
-			
 			if not hasattr(get_curl_info, '_curl_info'):
 				return {}		
 			return getattr(get_curl_info, '_curl_info')		
 		
 		def save_curl_info():
 			setattr(get_curl_info, '_curl_info', self.parse_info(curl))
-			curl_info_ready.set()
 
 		return get_curl_info, save_curl_info
 
@@ -414,7 +410,7 @@ class BaseCurlAdapter(BaseAdapter):
 		# timeout 
 		if timeout is None:
 			timeout = 0  # indefinitely
-	
+		
 		if isinstance(timeout, tuple):
 			connect_timeout, read_timeout = timeout
 			all_timeout = connect_timeout + read_timeout
@@ -527,42 +523,42 @@ class BaseCurlAdapter(BaseAdapter):
 	def send(
 		self, request: requests.PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
 	):
+		self.reset_curl()
 		
-		self.current_curl = self.curl.duphandle()
-		self.curl.reset()
-	
-		self.cert_verify(self.current_curl, request.url, verify, cert)
+		self.cert_verify(self.curl, request.url, verify, cert)
 
 		url = self.request_url(request, proxies)
 
 		self.set_curl_options(
-			self.current_curl,
+			self.curl,
 			request=request,
 			url=url,
 			timeout=timeout,
 			proxies=proxies
 		)
-		
+		a = time.time()
 		try:
 			# Save headers when received
 			header_buffer = BytesIO()
-			self.current_curl.setopt(CurlOpt.HEADERDATA, header_buffer)
+			self.curl.setopt(CurlOpt.HEADERDATA, header_buffer)
 
 			# Callbacks for retrieving & saving curl info object
-			get_curl_info, save_curl_info = self.get_curl_info_callback(self.current_curl)
-	
+			get_curl_info, save_curl_info = self.get_curl_info_callback(self.curl)
+
 			# Perform curl request with threading, and return body in a 'read' like class type (by simply using Curl.WRITEFUNCTION callback)
 			start_curl_stream = (
 				CurlStreamHandler(
-					curl_instance=self.current_curl,
-					executor=self.executor,
-					callback_after_perform=save_curl_info
+					curl_instance=self.curl,
+					callback_after_perform=save_curl_info,
+					timeout=timeout
 				)
-			).start().wait_for_headers()
+			).start()
+			
+			if self.debug:
+				print("[DEBUG] Curl Start Elapsed Time: ", time.time() - a)
 
-		
-			# Headers are available, parse them
-			parsed_headers = self.parse_headers(self.current_curl, header_buffer)
+			# Headers are available after start, parse them
+			parsed_headers = self.parse_headers(self.curl, header_buffer)
 
 			curl_stream_res = CurlStreamResponse(
 				url=url,
@@ -573,17 +569,28 @@ class BaseCurlAdapter(BaseAdapter):
 				**parsed_headers
 			)
 
+			def get_curl_info_wrapper():
+				start_curl_stream._wait_for_body()
+				return get_curl_info()
+
+			return self.build_response(self.curl, curl_stream_res, parsed_headers, request, get_curl_info=get_curl_info_wrapper)
 		except OSError as e:
 			raise ConnectionError(e, request=request)
 		
 		except (CurlError, pycurl.error) as e:
 			error_to_throw = self.curl_error_map(e)
 			raise error_to_throw(e, request=request)
+
+		except Exception as e:
+			if self.debug:
+				traceback.print_exc()
+			raise e
 		finally:
+			if self.debug:
+				print("[DEBUG] Curl Send Elapsed Time: ", time.time() - a)
 			pass
 
-		return self.build_response(self.current_curl, curl_stream_res, parsed_headers, request, get_curl_info)
-
+		
 	def close(self) -> None:
 		"""Close the session."""
 		self._closed = True
