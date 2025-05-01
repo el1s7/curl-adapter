@@ -2,3 +2,6 @@ exclude tests/*
 exclude .pytest_cache
 exclude .venv
 exclude other/*
+
+include curl_adapter/stream/*
+
