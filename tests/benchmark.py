@@ -4,7 +4,7 @@ import requests
 from curl_adapter import CurlCffiAdapter, PyCurlAdapter
 
 
-test_url = "https://httpbin.org/stream/100"
+test_url = "https://httpbingo.org/stream/100"
 
 def curl_cffi_adapter_requests(n):
     try:
