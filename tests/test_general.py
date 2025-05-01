@@ -47,7 +47,9 @@ class TestFunctions:
 			assert "headers" in r.json()
 
 	def test_brotli_python(self, curl_adapter):
-
+		'''
+			Note, the 'brotli' package must be installed.
+		'''
 		with requests.Session() as s:
 			s.mount("http://", curl_adapter(use_curl_content_decoding=False))
 			s.mount("https://", curl_adapter(use_curl_content_decoding=False))
