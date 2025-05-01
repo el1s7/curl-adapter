@@ -20,19 +20,42 @@ class PyCurlAdapter(BaseCurlAdapter):
 		)
 
 	def parse_info(self, curl: pycurl.Curl):
-
+		'''
+		 PyCurl currently doesn't support newer methods like TOTAL_TIME_T, SPEED_DOWNLOAD_T, SPEED_UPLOAD_T, SIZE_UPLOAD_T, SIZE_DOWNLOAD_T, etc.
+		 So we use the deprecated ones instead.
+		'''
+		
 		additional_info = {
+			# IP/Ports
 			"local_ip": self.get_curl_info(curl, pycurl.LOCAL_IP), 
 			"local_port": self.get_curl_info(curl, pycurl.LOCAL_PORT), 
 			"primary_ip": self.get_curl_info(curl, pycurl.PRIMARY_IP), 
 			"primary_port": self.get_curl_info(curl, pycurl.PRIMARY_PORT), 
-			"total_time": self.get_curl_info(curl, pycurl.TOTAL_TIME),  #Unsupported TOTAL_TIME_T
-			"speed_download": self.get_curl_info(curl, pycurl.SPEED_DOWNLOAD), #Unsupported SPEED_DOWNLOAD_T
-			"speed_upload": self.get_curl_info(curl, pycurl.SPEED_UPLOAD),  #Unsupported SPEED_UPLOAD_T
-			"size_upload": self.get_curl_info(curl, pycurl.SIZE_UPLOAD), #Unsupported SIZE_UPLOAD_T
-			"request_size": self.get_curl_info(curl, pycurl.REQUEST_SIZE),
-			"response_body_size": self.get_curl_info(curl, pycurl.SIZE_DOWNLOAD), #Unsupported SIZE_DOWNLOAD_T
-			"response_header_size": self.get_curl_info(curl, pycurl.HEADER_SIZE), 
+			
+			# Speed
+			"speed_download": self.get_curl_info(curl, pycurl.SPEED_DOWNLOAD), 
+			"speed_upload": self.get_curl_info(curl, pycurl.SPEED_UPLOAD), 
+
+			# Sizes
+			"request_size": self.get_curl_info(curl, pycurl.REQUEST_SIZE), 
+			"request_body_size": self.get_curl_info(curl, pycurl.SIZE_UPLOAD), 
+			"response_body_size": self.get_curl_info(curl, pycurl.SIZE_DOWNLOAD), 
+			"response_header_size": self.get_curl_info(curl, pycurl.HEADER_SIZE),
+
+			# SSL
+			"ssl_verify_result": self.get_curl_info(curl, pycurl.SSL_VERIFYRESULT),
+			"proxy_ssl_verify_result": "unsupported",
+
+			# Times
+			"total_time": self.get_curl_info(curl, pycurl.TOTAL_TIME), 
+			"starttransfer_time": self.get_curl_info(curl, pycurl.STARTTRANSFER_TIME),
+			"connect_time": self.get_curl_info(curl, pycurl.CONNECT_TIME),
+			"appconnect_time": self.get_curl_info(curl, pycurl.APPCONNECT_TIME),
+			"pretransfer_time": self.get_curl_info(curl, pycurl.PRETRANSFER_TIME),
+			"namelookup_time": self.get_curl_info(curl, pycurl.NAMELOOKUP_TIME),
+
+			# Other
+			"has_used_proxy": "unsupported", 
 		}
 
 		return additional_info

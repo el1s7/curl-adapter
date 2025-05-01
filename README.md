@@ -88,16 +88,24 @@ Note that if you're streaming and reading a large body by chunks, it's better to
 Returns:
 ```python
 {
-    'local_ip': '192.168.1.1', 
-    'local_port': 40164,
-    'primary_ip': '3.210.94.60', 
-    'primary_port': 443, 
-    'total_time': 429186, 
-    'speed_download': 472, 
-    'speed_upload': 0, 
-    'size_upload': 0, 
-    'request_size': 0, 
-    'response_body_size': 203, 
-    'response_header_size': 224
+    'local_ip':'192.168.1.1',
+    'local_port':19219,
+    'primary_ip':'142.250.200.142',
+    'primary_port':443,
+    'speed_download':52081115,
+    'speed_upload':0,
+    'request_size':0,
+    'request_body_size':0,
+    'response_body_size':519958376,
+    'response_header_size':418,
+    'ssl_verify_result':0,
+    'proxy_ssl_verify_result':0,
+    'total_time':9983626,
+    'starttransfer_time':171335,
+    'connect_time':33231,
+    'appconnect_time':47274,
+    'pretransfer_time':47378,
+    'namelookup_time':1025,
+    'has_used_proxy':0
 }
 ```

@@ -230,17 +230,36 @@ class BaseCurlAdapter(BaseAdapter):
 	def parse_info(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl]):
 
 		additional_info = {
+			# IP/Ports
 			"local_ip": self.get_curl_info(curl, CurlInfoOpt.LOCAL_IP), 
 			"local_port": self.get_curl_info(curl, CurlInfoOpt.LOCAL_PORT), 
 			"primary_ip": self.get_curl_info(curl, CurlInfoOpt.PRIMARY_IP), 
 			"primary_port": self.get_curl_info(curl, CurlInfoOpt.PRIMARY_PORT), 
-			"total_time": self.get_curl_info(curl, CurlInfoOpt.TOTAL_TIME_T), 
+			
+			# Speed
 			"speed_download": self.get_curl_info(curl, CurlInfoOpt.SPEED_DOWNLOAD_T), 
 			"speed_upload": self.get_curl_info(curl, CurlInfoOpt.SPEED_UPLOAD_T), 
-			"size_upload": self.get_curl_info(curl, CurlInfoOpt.SIZE_UPLOAD_T), 
-			"request_size": self.get_curl_info(curl, CurlInfoOpt.REQUEST_SIZE), 
+
+			# Sizes
+			"request_size": self.get_curl_info(curl, CurlInfoOpt.REQUEST_SIZE), # This is always 0 in Curl_Cffi
+			"request_body_size": self.get_curl_info(curl, CurlInfoOpt.SIZE_UPLOAD_T), 
 			"response_body_size": self.get_curl_info(curl, CurlInfoOpt.SIZE_DOWNLOAD_T), 
 			"response_header_size": self.get_curl_info(curl, CurlInfoOpt.HEADER_SIZE),
+
+			# SSL
+			"ssl_verify_result": self.get_curl_info(curl, CurlInfoOpt.SSL_VERIFYRESULT),
+			"proxy_ssl_verify_result": self.get_curl_info(curl, CurlInfoOpt.PROXY_SSL_VERIFYRESULT),
+
+			# Times
+			"total_time": self.get_curl_info(curl, CurlInfoOpt.TOTAL_TIME_T), 
+			"starttransfer_time": self.get_curl_info(curl, CurlInfoOpt.STARTTRANSFER_TIME_T),
+			"connect_time": self.get_curl_info(curl, CurlInfoOpt.CONNECT_TIME_T),
+			"appconnect_time": self.get_curl_info(curl, CurlInfoOpt.APPCONNECT_TIME_T),
+			"pretransfer_time": self.get_curl_info(curl, CurlInfoOpt.PRETRANSFER_TIME_T),
+			"namelookup_time": self.get_curl_info(curl, CurlInfoOpt.NAMELOOKUP_TIME_T),
+
+			# Other
+			"has_used_proxy": self.get_curl_info(curl, CurlInfoOpt.USED_PROXY)
 		}
 
 		return additional_info

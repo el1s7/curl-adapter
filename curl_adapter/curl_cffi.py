@@ -45,20 +45,12 @@ class CurlCffiAdapter(BaseCurlAdapter):
 			self.curl.debug()
 
 	def get_curl_info(self, curl: curl_cffi.Curl, option_code: int):
-		if option_code >= 0x600000:
-			"""
-				Currently, curl_cfii doesn't work for retriving information like TOTAL_TIME_T, SPEED_DOWNLOAD_T,
-				because they haven't mapped the all option codes. (These options start at 0x600000 int64_t, but curl_cfii maps only up to 0x400000...)
-				I made a pull request to fix it: https://github.com/lexiforest/curl_cffi/pull/481 (but as of now it's not merged yet)
-			"""
-			c_value = ffi.new("int64_t*")
-			value = lib.curl_easy_getinfo(curl._curl, option_code, c_value)
-			curl._check_error(value, "getinfo", option_code)
-			if c_value[0] == ffi.NULL:
-				return None
-			return int(c_value[0])
-		
-		return super().get_curl_info(curl, option_code)
+		value = super().get_curl_info(curl, option_code)
+
+		if isinstance(value, bytes):
+			return value.decode()
+
+		return value
 
 	def set_ja3_options(self, curl: curl_cffi.Curl, ja3: str, permute: bool = False):
 		"""
