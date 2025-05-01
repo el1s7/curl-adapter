@@ -15,7 +15,8 @@ keywords = ["curl", "requests", "adapter", "tls fingerprint", "pycurl", "curl_cf
 dependencies = [
     "requests",
     "curl_cffi",
-    "pycurl"
+    "pycurl",
+    "brotli"
 ]
 
 [project.urls]
