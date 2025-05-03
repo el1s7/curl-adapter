@@ -19,7 +19,7 @@ class PyCurlAdapter(BaseCurlAdapter):
 			use_thread_local_curl
 		)
 
-	def parse_info(self, curl: pycurl.Curl):
+	def parse_info(self, curl: pycurl.Curl, headers_only=False):
 		'''
 		 PyCurl currently doesn't support newer methods like TOTAL_TIME_T, SPEED_DOWNLOAD_T, SPEED_UPLOAD_T, SIZE_UPLOAD_T, SIZE_DOWNLOAD_T, etc.
 		 So we use the deprecated ones instead.
@@ -32,14 +32,9 @@ class PyCurlAdapter(BaseCurlAdapter):
 			"primary_ip": self.get_curl_info(curl, pycurl.PRIMARY_IP), 
 			"primary_port": self.get_curl_info(curl, pycurl.PRIMARY_PORT), 
 			
-			# Speed
-			"speed_download": self.get_curl_info(curl, pycurl.SPEED_DOWNLOAD), 
-			"speed_upload": self.get_curl_info(curl, pycurl.SPEED_UPLOAD), 
-
 			# Sizes
 			"request_size": self.get_curl_info(curl, pycurl.REQUEST_SIZE), 
 			"request_body_size": self.get_curl_info(curl, pycurl.SIZE_UPLOAD), 
-			"response_body_size": self.get_curl_info(curl, pycurl.SIZE_DOWNLOAD), 
 			"response_header_size": self.get_curl_info(curl, pycurl.HEADER_SIZE),
 
 			# SSL
@@ -47,7 +42,6 @@ class PyCurlAdapter(BaseCurlAdapter):
 			"proxy_ssl_verify_result": "unsupported",
 
 			# Times
-			"total_time": self.get_curl_info(curl, pycurl.TOTAL_TIME), 
 			"starttransfer_time": self.get_curl_info(curl, pycurl.STARTTRANSFER_TIME),
 			"connect_time": self.get_curl_info(curl, pycurl.CONNECT_TIME),
 			"appconnect_time": self.get_curl_info(curl, pycurl.APPCONNECT_TIME),
@@ -57,6 +51,15 @@ class PyCurlAdapter(BaseCurlAdapter):
 			# Other
 			"has_used_proxy": "unsupported", 
 		}
+
+		if not headers_only:
+			# Available after the body has been parsed
+			additional_info.update({
+				"speed_download": self.get_curl_info(curl, pycurl.SPEED_DOWNLOAD), 
+				"speed_upload": self.get_curl_info(curl, pycurl.SPEED_UPLOAD), 
+				"response_body_size": self.get_curl_info(curl, pycurl.SIZE_DOWNLOAD), 
+				"total_time": self.get_curl_info(curl, pycurl.TOTAL_TIME)
+			})
 
 		return additional_info
 

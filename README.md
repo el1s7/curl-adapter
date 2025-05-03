@@ -78,34 +78,38 @@ with requests.Session() as s:
     s.mount("https://", PyCurlAdapter())
 
     response = s.get("https://example.com")
-    curl_info: CurlInfo = response.get_curl_info()
+
+    body = response.text
+
+    curl_info: CurlInfo = response.curl_info
+
     print(
         curl_info
     )
 ```
-Note that if you're streaming and reading a large body by chunks, it's better to call the `get_curl_info()` method _after_ the whole body has been read, since this method blocks until the body has been fully read in memory.
 
-Returns:
+Returns a simple dict:
 ```python
 {
     'local_ip':'192.168.1.1',
     'local_port':19219,
     'primary_ip':'142.250.200.142',
     'primary_port':443,
-    'speed_download':52081115,
-    'speed_upload':0,
     'request_size':0,
     'request_body_size':0,
-    'response_body_size':519958376,
     'response_header_size':418,
     'ssl_verify_result':0,
     'proxy_ssl_verify_result':0,
-    'total_time':9983626,
     'starttransfer_time':171335,
     'connect_time':33231,
     'appconnect_time':47274,
     'pretransfer_time':47378,
     'namelookup_time':1025,
-    'has_used_proxy':0
+    'has_used_proxy':0,
+    'speed_download':52081115, # only available after the body has been read
+    'speed_upload':0, # only available after the body has been read
+    'response_body_size':519958376, # only available after the body has been read
+    'total_time':9983626, # only available after the body has been read
 }
 ```
+Note that some cURL information is only availabe after the body stream has been fully consumed. If you need one of these fields, make sure you read the body before getting curl information, basically you can just do `response.content` to consume the body, or use a special method `response.wait_for_body()`.

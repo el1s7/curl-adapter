@@ -54,23 +54,33 @@ import curl_cffi.curl
 from curl_cffi.curl import CurlInfo as CurlInfoOpt, CurlOpt, CurlError 
 from curl_cffi.const import CurlECode, CurlHttpVersion
 
-from .stream.handler import CurlStreamHandler, _detect_environment
+from .stream.handler import CurlStreamHandler
 from .stream.response import CurlStreamResponse
-
-_THREAD_ENV, _THREAD_SLEEP, _THREAD_EVENT = _detect_environment()
 
 class CurlInfo(TypedDict):
 	local_ip: str
 	local_port: int
 	primary_ip: str
 	primary_port: int
-	total_time: float
-	speed_download: float
-	speed_upload: float
-	size_upload: float
-	request_size: float
-	response_body_size: float
-	response_header_size: float
+
+	speed_download: int
+	speed_upload: int
+
+	request_size: int
+	request_body_size: int
+	response_body_size: int
+	response_header_size: int
+
+	ssl_verify_result: int
+	proxy_ssl_verify_result: int
+
+	total_time: int
+	starttransfer_time: int
+	connect_time: int
+	appconnect_time: int
+	pretransfer_time: int
+	namelookup_time: int
+	has_used_proxy: int
 
 class BaseCurlAdapter(BaseAdapter):
 	
@@ -227,7 +237,7 @@ class BaseCurlAdapter(BaseAdapter):
 	def get_curl_info(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl], option_code: int):
 		return curl.getinfo(option_code)
 
-	def parse_info(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl]):
+	def parse_info(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl], headers_only=False):
 
 		additional_info = {
 			# IP/Ports
@@ -236,14 +246,9 @@ class BaseCurlAdapter(BaseAdapter):
 			"primary_ip": self.get_curl_info(curl, CurlInfoOpt.PRIMARY_IP), 
 			"primary_port": self.get_curl_info(curl, CurlInfoOpt.PRIMARY_PORT), 
 			
-			# Speed
-			"speed_download": self.get_curl_info(curl, CurlInfoOpt.SPEED_DOWNLOAD_T), 
-			"speed_upload": self.get_curl_info(curl, CurlInfoOpt.SPEED_UPLOAD_T), 
-
 			# Sizes
 			"request_size": self.get_curl_info(curl, CurlInfoOpt.REQUEST_SIZE), # This is always 0 in Curl_Cffi
 			"request_body_size": self.get_curl_info(curl, CurlInfoOpt.SIZE_UPLOAD_T), 
-			"response_body_size": self.get_curl_info(curl, CurlInfoOpt.SIZE_DOWNLOAD_T), 
 			"response_header_size": self.get_curl_info(curl, CurlInfoOpt.HEADER_SIZE),
 
 			# SSL
@@ -251,7 +256,6 @@ class BaseCurlAdapter(BaseAdapter):
 			"proxy_ssl_verify_result": self.get_curl_info(curl, CurlInfoOpt.PROXY_SSL_VERIFYRESULT),
 
 			# Times
-			"total_time": self.get_curl_info(curl, CurlInfoOpt.TOTAL_TIME_T), 
 			"starttransfer_time": self.get_curl_info(curl, CurlInfoOpt.STARTTRANSFER_TIME_T),
 			"connect_time": self.get_curl_info(curl, CurlInfoOpt.CONNECT_TIME_T),
 			"appconnect_time": self.get_curl_info(curl, CurlInfoOpt.APPCONNECT_TIME_T),
@@ -262,21 +266,17 @@ class BaseCurlAdapter(BaseAdapter):
 			"has_used_proxy": self.get_curl_info(curl, CurlInfoOpt.USED_PROXY)
 		}
 
+		if not headers_only:
+			# Available after the body has been parsed
+
+			additional_info.update({
+				"speed_download": self.get_curl_info(curl, CurlInfoOpt.SPEED_DOWNLOAD_T), 
+				"speed_upload": self.get_curl_info(curl, CurlInfoOpt.SPEED_UPLOAD_T), 
+				"response_body_size": self.get_curl_info(curl, CurlInfoOpt.SIZE_DOWNLOAD_T), 
+				"total_time": self.get_curl_info(curl, CurlInfoOpt.TOTAL_TIME_T), 
+			})
+
 		return additional_info
-
-	def get_curl_info_callback(self,  curl: typing.Union[curl_cffi.Curl, pycurl.Curl]):
-		'''
-			Build a callback function for returning curl info object after perform is finished.
-		'''
-		def get_curl_info():
-			if not hasattr(get_curl_info, '_curl_info'):
-				return {}		
-			return getattr(get_curl_info, '_curl_info')		
-		
-		def save_curl_info():
-			setattr(get_curl_info, '_curl_info', self.parse_info(curl))
-
-		return get_curl_info, save_curl_info
 
 	def parse_headers(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl], header_buffer: BytesIO):
 		
@@ -346,7 +346,14 @@ class BaseCurlAdapter(BaseAdapter):
 			"header_list": header_list,
 		}
 
-	def build_response(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl], res:CurlStreamResponse, parsed_headers: dict, req: requests.PreparedRequest, get_curl_info: callable):
+	def build_response(self, 
+		curl: typing.Union[curl_cffi.Curl, pycurl.Curl], 
+		res:CurlStreamResponse, 
+		parsed_headers: dict, 
+		req: requests.PreparedRequest, 
+		wait_for_body: callable,
+		curl_info_dict: dict
+	):
 		
 		response = Response()
 
@@ -362,7 +369,9 @@ class BaseCurlAdapter(BaseAdapter):
 		
 		response.reason = parsed_headers["reason"]
 
-		response.get_curl_info = get_curl_info
+		response.wait_for_body = wait_for_body
+
+		response.curl_info = curl_info_dict
 
 		if isinstance(req.url, bytes):
 			response.url = req.url.decode("utf-8")
@@ -562,17 +571,20 @@ class BaseCurlAdapter(BaseAdapter):
 			self.curl.setopt(CurlOpt.HEADERDATA, header_buffer)
 
 			# Callbacks for retrieving & saving curl info object
-			get_curl_info, save_curl_info = self.get_curl_info_callback(self.curl)
+			curl_info_dict: CurlInfo = {}
 
 			# Perform curl request with threading, and return body in a 'read' like class type (by simply using Curl.WRITEFUNCTION callback)
 			start_curl_stream = (
 				CurlStreamHandler(
 					curl_instance=self.curl,
-					callback_after_perform=save_curl_info,
+					callback_after_perform=lambda: curl_info_dict.update(self.parse_info(self.curl)),
 					timeout=timeout
 				)
 			).start()
 			
+			# Headers are already available
+			curl_info_dict.update(self.parse_info(self.curl, headers_only=True))
+
 			if self.debug:
 				print("[DEBUG] Curl Start Elapsed Time: ", time.time() - a)
 
@@ -588,11 +600,17 @@ class BaseCurlAdapter(BaseAdapter):
 				**parsed_headers
 			)
 
-			def get_curl_info_wrapper():
-				start_curl_stream._wait_for_body()
-				return get_curl_info()
+			def wait_for_body():
+				'''
+					Wait for the body to be fully read
+				'''
+				try:
+					for _ in start_curl_stream._read_body():
+						pass
+				except StopIteration:
+					pass
 
-			return self.build_response(self.curl, curl_stream_res, parsed_headers, request, get_curl_info=get_curl_info_wrapper)
+			return self.build_response(self.curl, curl_stream_res, parsed_headers, request, wait_for_body=wait_for_body, curl_info_dict=curl_info_dict)
 		except OSError as e:
 			raise ConnectionError(e, request=request)
 		
@@ -608,7 +626,6 @@ class BaseCurlAdapter(BaseAdapter):
 			if self.debug:
 				print("[DEBUG] Curl Send Elapsed Time: ", time.time() - a)
 			pass
-
 		
 	def close(self) -> None:
 		"""Close the session."""

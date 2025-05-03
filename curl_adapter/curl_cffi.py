@@ -170,3 +170,6 @@ class CurlCffiAdapter(BaseCurlAdapter):
 					self.configuration_options.get("akamai_str")
 				)
 	
+	def reset_curl(self):
+		self.curl.clean_after_perform()
+		return super().reset_curl()

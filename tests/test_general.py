@@ -144,9 +144,14 @@ class TestFunctions:
 		with requests.Session() as s:
 			s.mount("http://", curl_adapter())
 			s.mount("https://", curl_adapter())
-			r = s.get(f"{test_server}/get")
-			curl_info: CurlInfo = r.get_curl_info()
+			r = s.post(f"{test_server}/post", data={
+				"test": "data"
+			})
+			r.wait_for_body()
+			curl_info: CurlInfo = r.curl_info
+		
 			assert "local_ip" in curl_info
+			assert int(curl_info["request_body_size"]) == 9
 
 	def test_timeout(self, curl_adapter):
 		with pytest.raises(requests.exceptions.ConnectTimeout) as err:
