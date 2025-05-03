@@ -23,7 +23,7 @@ def _detect_environment() -> typing.Tuple[str, typing.Callable]:
 			import eventlet.event
 
 			if is_eventlet(socket):
-				return ("eventlet", eventlet.sleep, eventlet.event.Event)
+				return ("eventlet", eventlet, eventlet.sleep, eventlet.event.Event)
 
 		except ImportError:
 			pass
@@ -37,13 +37,13 @@ def _detect_environment() -> typing.Tuple[str, typing.Callable]:
 			import gevent.event
 
 			if socket.socket is _gsocket.socket:
-				return ("gevent", gevent.sleep, gevent.event.Event)
+				return ("gevent", gevent, gevent.sleep, gevent.event.Event)
 		except ImportError:
 			pass
 
-	return ("default", time.sleep, threading.Event)
+	return ("default", threading, time.sleep, threading.Event)
 
-_THREAD_ENV, _THREAD_SLEEP, _THREAD_EVENT = _detect_environment()
+_THREAD_ENV, _THREAD_CLASS, _THREAD_SLEEP, _THREAD_EVENT = _detect_environment()
 
 class CurlStreamHandler():
 	"""
@@ -70,6 +70,7 @@ class CurlStreamHandler():
 		self.debug = debug
 
 		self.curl_multi = None
+		self._body_gen = None
 
 	def _write_callback(self, chunk):
 		'''
@@ -265,34 +266,31 @@ class CurlStreamHandler():
 
 		if isinstance(self.curl, curl_cffi.Curl):
 			return self._perform_curl_cffi()
-			
+
 		if isinstance(self.curl, pycurl.Curl):
 			return self._perform_pycurl()
 
 		raise TypeError("Cannot perform on invalid Curl object.")
 	
-	def _wait_for_headers(self):
+	def _read_headers(self):
 		while not self.initialized.is_set():
-			self._perform_read()
-			_THREAD_SLEEP(0)
-			pass
-
-	def _wait_for_body(self):
-		ts = time.time()
-		warned = False
-		
-		while not self.perform_finished.is_set():
-
-			if time.time() - ts > 5 and not warned:
-				warnings.warn("""
-					This method is a blocking call, it's only returned after the whole response body has been parsed. 
-					If you are streaming a HTTP response and reading it into chunks (e.g. downloading a file), it's better to call this method *after* reading the body.
-				""")
-				warned = True
+			if _THREAD_ENV == "gevent":
+				spawn = _THREAD_CLASS.spawn(self._perform_read())
+				spawn.join()
+			else:
+				self._perform_read()
+				_THREAD_SLEEP(0)
+			yield
 			
-			self._perform_read()
-			_THREAD_SLEEP(0)
-			pass
+	def _read_body(self):
+		while not self.perform_finished.is_set():
+			if _THREAD_ENV == "gevent":
+				spawn = _THREAD_CLASS.spawn(self._perform_read())
+				spawn.join()
+			else:
+				self._perform_read()
+				_THREAD_SLEEP(0)
+			yield
 	
 	def _perform(self):
 		
@@ -322,8 +320,12 @@ class CurlStreamHandler():
 				raise TypeError("Cannot perform on invalid Curl object.")
 
 		# Wait for headers
-		self._wait_for_headers()
-
+		for _ in self._read_headers():
+			pass
+		
+		# Body stream
+		self._body_gen = self._read_body()
+	
 		if self.debug:
 			print(f"[DEBUG] Curl perform elapsed: {time.time() - t0:.3f}s | Stream finished?: {self.perform_finished.is_set()}")
 
@@ -346,7 +348,7 @@ class CurlStreamHandler():
 
 		if self.error:
 			raise self.error
-
+		
 		# If amt is None, read everything:
 		if amt is None:
 			return self._read_all()
@@ -367,9 +369,11 @@ class CurlStreamHandler():
 		# Then read new chunks until we hit None or are closed
 		while not self.closed and not self.quit_event.is_set():
 			
-			if not self.perform_finished.is_set():
-				self._perform_read()
-
+			try:
+				next(self._body_gen)
+			except StopIteration:
+				pass
+			
 			if self.error:
 				raise self.error
 
@@ -405,9 +409,10 @@ class CurlStreamHandler():
 
 		# Read additional chunks from the queue if we still need data
 		while needed > 0 and not self.closed and not self.quit_event.is_set():
-			
-			if not self.perform_finished.is_set():
-				self._perform_read()
+			try:
+				next(self._body_gen)
+			except StopIteration:
+				pass
 
 			if self.error:
 				raise self.error
@@ -419,6 +424,7 @@ class CurlStreamHandler():
 				continue
 
 			if chunk is None:
+				
 				# End of stream. close here?
 				if self.perform_finished.is_set():
 					self.close()
