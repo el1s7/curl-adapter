@@ -275,7 +275,7 @@ class CurlStreamHandler():
 	def _read_headers(self):
 		while not self.initialized.is_set():
 			if _THREAD_ENV == "gevent":
-				spawn = _THREAD_CLASS.spawn(self._perform_read())
+				spawn = _THREAD_CLASS.spawn(self._perform_read)
 				spawn.join()
 			else:
 				self._perform_read()
@@ -285,7 +285,7 @@ class CurlStreamHandler():
 	def _read_body(self):
 		while not self.perform_finished.is_set():
 			if _THREAD_ENV == "gevent":
-				spawn = _THREAD_CLASS.spawn(self._perform_read())
+				spawn = _THREAD_CLASS.spawn(self._perform_read)
 				spawn.join()
 			else:
 				self._perform_read()
