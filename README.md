@@ -112,4 +112,4 @@ Returns a simple dict:
     'total_time':9983626, # only available after the body has been read
 }
 ```
-Note that some cURL information is only availabe after the body stream has been fully consumed. If you need one of these fields, make sure you read the body before getting curl information, basically you can just do `response.content` to consume the body, or use a special method `response.wait_for_body()`.
+Note that some cURL information fields are only availabe after the body stream has been fully consumed. If you need to get one of those fields, make sure you read the body before getting curl information, you can simply just use `response.content` to consume the body, or use a special method `response.wait_for_body()`.
