@@ -12,7 +12,7 @@ from http.client import HTTPMessage
 
 import email.parser
 import typing
-from .handler import CurlStreamHandler
+from .handler import CurlStreamHandler, CurlStreamHandlerBase
 
 
 class BytesQueueBuffer:
@@ -117,7 +117,7 @@ class CurlStreamResponse(HTTPResponse):
 	def __init__(
 		self,
 
-		curl_stream_handler: CurlStreamHandler,
+		curl_stream_handler: CurlStreamHandlerBase,
 		request: requests.PreparedRequest=None,
 		url=None, #URL
 		method=None, #Method

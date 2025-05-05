@@ -54,7 +54,7 @@ import curl_cffi.curl
 from curl_cffi.curl import CurlInfo as CurlInfoOpt, CurlOpt, CurlError 
 from curl_cffi.const import CurlECode, CurlHttpVersion
 
-from .stream.handler import CurlStreamHandler
+from .stream.handler import CurlStreamHandler, CurlStreamHandlerBase
 from .stream.response import CurlStreamResponse
 
 class CurlInfo(TypedDict):
@@ -82,6 +82,10 @@ class CurlInfo(TypedDict):
 	namelookup_time: int
 	has_used_proxy: int
 
+class Response(requests.Response):
+	curl_info: CurlInfo
+	wait_for_body: typing.Callable[[], None]
+
 class BaseCurlAdapter(BaseAdapter):
 	
 	_local = threading.local()
@@ -91,6 +95,7 @@ class BaseCurlAdapter(BaseAdapter):
 		debug=False, 
 		use_curl_content_decoding=False,
 		use_thread_local_curl=True,
+		stream_handler: CurlStreamHandlerBase=None
 	):
 		
 		self.curl_class: typing.Union[curl_cffi.Curl, pycurl.Curl] = curl_class
@@ -98,6 +103,8 @@ class BaseCurlAdapter(BaseAdapter):
 		self.use_curl_content_decoding = use_curl_content_decoding
 		
 		self.use_thread_local_curl = use_thread_local_curl
+
+		self.stream_handler = (stream_handler or CurlStreamHandler)
 
 		if self.use_thread_local_curl:
 			self._local.curl = self.curl_class()
@@ -235,8 +242,12 @@ class BaseCurlAdapter(BaseAdapter):
 		return self.CODE2ERROR.get(err_code, RequestException)
 
 	def get_curl_info(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl], option_code: int):
-		return curl.getinfo(option_code)
-
+		try:
+			return curl.getinfo(option_code)
+		except:
+			if self.debug:
+				traceback.print_exc()
+			return None
 	def parse_info(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl], headers_only=False):
 
 		additional_info = {
@@ -275,7 +286,7 @@ class BaseCurlAdapter(BaseAdapter):
 				"response_body_size": self.get_curl_info(curl, CurlInfoOpt.SIZE_DOWNLOAD_T), 
 				"total_time": self.get_curl_info(curl, CurlInfoOpt.TOTAL_TIME_T), 
 			})
-
+		
 		return additional_info
 
 	def parse_headers(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl], header_buffer: BytesIO):
@@ -353,7 +364,7 @@ class BaseCurlAdapter(BaseAdapter):
 		req: requests.PreparedRequest, 
 		wait_for_body: callable,
 		curl_info_dict: dict
-	):
+	) -> Response:
 		
 		response = Response()
 
@@ -575,10 +586,11 @@ class BaseCurlAdapter(BaseAdapter):
 
 			# Perform curl request with threading, and return body in a 'read' like class type (by simply using Curl.WRITEFUNCTION callback)
 			start_curl_stream = (
-				CurlStreamHandler(
+				self.stream_handler(
 					curl_instance=self.curl,
-					callback_after_perform=lambda: curl_info_dict.update(self.parse_info(self.curl)),
-					timeout=timeout
+					callback_after_perform=lambda curl: curl_info_dict.update(self.parse_info(curl)),
+					timeout=timeout,
+					debug=self.debug
 				)
 			).start()
 			
@@ -600,17 +612,7 @@ class BaseCurlAdapter(BaseAdapter):
 				**parsed_headers
 			)
 
-			def wait_for_body():
-				'''
-					Wait for the body to be fully read
-				'''
-				try:
-					for _ in start_curl_stream._read_body():
-						pass
-				except StopIteration:
-					pass
-
-			return self.build_response(self.curl, curl_stream_res, parsed_headers, request, wait_for_body=wait_for_body, curl_info_dict=curl_info_dict)
+			return self.build_response(self.curl, curl_stream_res, parsed_headers, request, wait_for_body=start_curl_stream._wait_for_body, curl_info_dict=curl_info_dict)
 		except OSError as e:
 			raise ConnectionError(e, request=request)
 		

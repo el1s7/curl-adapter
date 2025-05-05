@@ -15,30 +15,32 @@ from curl_cffi.requests.impersonate import (
 	BrowserTypeLiteral
 )
 
-from .base_adapter import BaseCurlAdapter
+from .stream.handler.base import CurlStreamHandlerBase
 
-from requests.utils import CaseInsensitiveDict
+from .base_adapter import BaseCurlAdapter
 
 class CurlAdapterConfigurationOptions(TypedDict):
 	ja3_str: str
 	permute: bool
 	akamai_str: str
+	extra_fp: ExtraFingerprints
 
 class CurlCffiAdapter(BaseCurlAdapter):
 
 	def __init__(self, 
-			debug=False, 
 			impersonate_browser_type: BrowserTypeLiteral="chrome", 
+			tls_configuration_options: CurlAdapterConfigurationOptions=None,
+			debug=False, 
 			use_curl_content_decoding=False, 
 			use_thread_local_curl=True,
-			tls_configuration_options: CurlAdapterConfigurationOptions=None
+			stream_handler: CurlStreamHandlerBase=None
 		):
 
 		self.impersonate_browser_type = impersonate_browser_type
 		
 		self.configuration_options = tls_configuration_options
 
-		super().__init__(curl_cffi.Curl, debug, use_curl_content_decoding, use_thread_local_curl)
+		super().__init__(curl_cffi.Curl, debug, use_curl_content_decoding, use_thread_local_curl, stream_handler)
 
 	def enable_debug(self):
 		if self.debug:
@@ -146,6 +148,17 @@ class CurlCffiAdapter(BaseCurlAdapter):
 		# curl-impersonate only accepts masp format, without commas.
 		curl.setopt(CurlOpt.HTTP2_PSEUDO_HEADERS_ORDER, header_order.replace(",", ""))
 	
+	def set_extra_fp(self, curl: curl_cffi.Curl, fp: ExtraFingerprints):
+		if fp.tls_signature_algorithms:
+			curl.setopt(CurlOpt.SSL_SIG_HASH_ALGS, ",".join(fp.tls_signature_algorithms))
+
+		curl.setopt(CurlOpt.SSLVERSION, fp.tls_min_version | CurlSslVersion.MAX_DEFAULT)
+		curl.setopt(CurlOpt.TLS_GREASE, int(fp.tls_grease))
+		curl.setopt(CurlOpt.SSL_PERMUTE_EXTENSIONS, int(fp.tls_permute_extensions))
+		curl.setopt(CurlOpt.SSL_CERT_COMPRESSION, fp.tls_cert_compression)
+		curl.setopt(CurlOpt.STREAM_WEIGHT, fp.http2_stream_weight)
+		curl.setopt(CurlOpt.STREAM_EXCLUSIVE, fp.http2_stream_exclusive)
+
 	def set_curl_options(self, curl, request, url, timeout, proxies):
 		
 		super().set_curl_options(curl, request, url, timeout, proxies)
@@ -168,6 +181,12 @@ class CurlCffiAdapter(BaseCurlAdapter):
 				self.set_akamai_options(
 					curl,
 					self.configuration_options.get("akamai_str")
+				)
+
+			if self.configuration_options.get("extra_fp"):
+				self.set_extra_fp(
+					curl,
+					self.configuration_options.get("extra_fp")
 				)
 	
 	def reset_curl(self):

@@ -1,6 +1,7 @@
 
 import pycurl
 from .base_adapter import BaseCurlAdapter
+from .stream.handler.base import CurlStreamHandlerBase
 
 
 
@@ -9,14 +10,16 @@ class PyCurlAdapter(BaseCurlAdapter):
 	def __init__(self, 
 			debug=False, 
 			use_curl_content_decoding=False, # pyCurl automatic decoding is disabled by default. Because pycurl doesnt support modern decoding algorithms...
-			use_thread_local_curl=True
+			use_thread_local_curl=True,
+			stream_handler: CurlStreamHandlerBase=None
         ):
 
 		super().__init__(
 			pycurl.Curl, 
 			debug,
 			use_curl_content_decoding, 
-			use_thread_local_curl
+			use_thread_local_curl,
+			stream_handler
 		)
 
 	def parse_info(self, curl: pycurl.Curl, headers_only=False):
@@ -60,8 +63,10 @@ class PyCurlAdapter(BaseCurlAdapter):
 				"response_body_size": self.get_curl_info(curl, pycurl.SIZE_DOWNLOAD), 
 				"total_time": self.get_curl_info(curl, pycurl.TOTAL_TIME)
 			})
+			
+		filtered_keys = {k:v for k,v in additional_info.items() if v is not None}
 
-		return additional_info
+		return filtered_keys
 
 
 	def set_curl_options(self, curl, request, url, timeout, proxies):
