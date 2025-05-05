@@ -8,3 +8,5 @@ __pycache__
 dist
 other
 build
+*.whl
+curl_cffi_builds
