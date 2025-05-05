@@ -19,7 +19,10 @@ Though, if you're looking for async support or websockets, you should definitely
 </details>
 <br>
 
-Additionally, you can even use curl adapter with [pycurl](https://github.com/pycurl/pycurl). 
+You can even use curl adapter with [pycurl](https://github.com/pycurl/pycurl). 
+
+Additionally, this module is optimized for working with Gevent.
+
 
 ## Installation
 ```console
@@ -46,10 +49,22 @@ Configuring curl impersonate options:
 import requests
 from curl_adapter import CurlCffiAdapter
 
+curl_cffi_adapter = CurlCffiAdapter(
+    # This is the default
+    impersonate_browser_type="chrome", 
+
+    # Optionally set additional options
+    tls_configuration_options={
+        "ja3_str": "...",
+        "akamai_str": "...",
+        "extra_fp": ExtraFingerprints(...),
+    }
+)
+
 # you can use 'with ...' for just making a single request
 with requests.Session() as s:
-    s.mount("http://", CurlCffiAdapter(impersonate_browser_type="chrome"))
-    s.mount("https://", CurlCffiAdapter(impersonate_browser_type="chrome"))
+    s.mount("http://", curl_cffi_adapter)
+    s.mount("https://", curl_cffi_adapter)
 
     s.get("https://example.com")
 ```
