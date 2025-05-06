@@ -4,5 +4,6 @@ exclude .venv
 exclude other/*
 
 include curl_adapter/stream/*
-include curl_adapter/stream/sockets*
+include curl_adapter/stream/handler/*
+include curl_adapter/stream/sockets/*
 
