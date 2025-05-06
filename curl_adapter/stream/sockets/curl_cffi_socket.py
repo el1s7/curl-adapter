@@ -12,7 +12,7 @@ from gevent.event import AsyncResult
 from gevent.lock import Semaphore
 
 if TYPE_CHECKING:
-	from gevent._types import _TimerWatcher
+	from gevent._types import _TimerWatcher, _IoWatcher
 
 CURL_POLL_NONE = 0
 CURL_POLL_IN = 1
@@ -44,22 +44,42 @@ def timer_function(curlm, timeout_ms: int, clientp: "GeventCurlCffi"):
 			for timer in gevent_curl._timers:
 				timer.kill(block=False)
 			gevent_curl._timers = set()
+
+		elif timeout_ms == 0:
+			# immediate timeout; invoke directly
+			gevent.spawn(gevent_curl._process_data, CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
+
 		else:
-			if timeout_ms >= 0:
+			if timeout_ms > 0:
+				# schedule one timer
 				# spawn a greenlet to run after timeout_ms milliseconds
 				timer = gevent.spawn_later(
-					timeout_ms / 1000.0,
-					gevent_curl._process_data,
-					CURL_SOCKET_TIMEOUT,
-					CURL_POLL_NONE,
-				)
+						timeout_ms / 1000.0,
+						gevent_curl._process_data,
+						CURL_SOCKET_TIMEOUT,
+						CURL_POLL_NONE,
+					)
 				gevent_curl._timers.add(timer)
-				
+			
 @ffi.def_extern()
 def socket_function(curlm, sockfd: int, what: int, clientp: "GeventCurlCffi", data: Any):
 	gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
 
-	gevent.spawn(gevent_curl._socket_function_handler(what, sockfd, curlm, data))
+	want_read  = bool(what & CURL_POLL_IN)
+	want_write = bool(what & CURL_POLL_OUT)
+	
+	# compute the new mask for gevent
+	new_mask = 0
+	if want_read:  new_mask |= GEVENT_READ
+	if want_write: new_mask |= GEVENT_WRITE
+	
+	# teardown if libcurl says “remove”
+	if what & CURL_POLL_REMOVE:
+		gevent_curl._update_watcher(sockfd, 0)
+		return
+	
+	# otherwise install/update the watcher
+	gevent_curl._update_watcher(sockfd, new_mask)
 	
 class GeventCurlCffi:
 	'''
@@ -82,7 +102,7 @@ class GeventCurlCffi:
 		self.loop = gevent.get_hub().loop
 
 		self._timers: set[gevent.Greenlet] = set()
-		self._watchers = {}
+		self._watchers: dict[typing.Any, _IoWatcher] = {}
 
 		self._results: dict[Curl, AsyncResult] = {}
 		self._handles: dict[ffi.CData, Curl] = {}
@@ -152,15 +172,6 @@ class GeventCurlCffi:
 		running_handle = ffi.new("int *")
 		lib.curl_multi_socket_action(self._curl_multi, sockfd, ev_bitmask, running_handle)
 		return running_handle[0]
-
-	def _socket_function_handler(self, event, sockfd, multi, data):
-		with self._lock:
-			if event & CURL_POLL_IN:
-				self._add_reader(sockfd, self._process_data, sockfd, CURL_CSELECT_IN)
-			if event & CURL_POLL_OUT:
-				self._add_writer(sockfd, self._process_data, sockfd, CURL_CSELECT_OUT)
-			if event & CURL_POLL_REMOVE:
-				self._watchers.pop(sockfd, None)
 	
 	def _process_data(self, sockfd: int, ev_bitmask: int):
 		"""Call curl_multi_info_read to read data for given socket."""
@@ -221,32 +232,49 @@ class GeventCurlCffi:
 		if result and not result.ready():
 			result.set_exception(exception)
 
-	def _remove_reader(self, fd):
-		watchers = self._watchers.get(fd)
-		if watchers and 'read' in watchers:
-			watchers['read'].stop()
-			del watchers['read']
-		if not watchers:
-			self._watchers.pop(fd, None)
+	def _update_watcher(self, fd: int, mask: int):
+		"""
+		Ensure there's exactly one I/O watcher for `fd` with the given mask.
+		If mask==0, we stop+remove it. If mask changes, we stop+recreate.
+		"""
+		entry = self._watchers.get(fd)
 
-	def _remove_writer(self, fd):
-		watchers = self._watchers.get(fd)
-		if watchers and 'write' in watchers:
-			watchers['write'].stop()
-			del watchers['write']
-		if not watchers:
-			self._watchers.pop(fd, None)
+		# nothing to do if mask didn’t change
+		if entry and entry["mask"] == mask:
+			return
 
-	def _add_reader(self, fd, callback, *args):
-		# mirror asyncio semantics: remove old first
-		self._remove_reader(fd)
-		# create & start a new read watcher
-		w = self.loop.io(fd, GEVENT_READ, ref=True, priority=None)
-		self._watchers.setdefault(fd, {})['read'] = w
-		w.start(callback, *args)
+		# stop old watcher if any
+		if entry:
+			entry["watcher"].stop()
+			del self._watchers[fd]
 
-	def _add_writer(self, fd, callback, *args):
-		self._remove_writer(fd)
-		w = self.loop.io(fd, GEVENT_WRITE, ref=True, priority=None)
-		self._watchers.setdefault(fd, {})['write'] = w
-		w.start(callback, *args)
+		# if new mask is zero, we’re done
+		if mask == 0:
+			return
+
+		# create a new watcher for read/write as needed
+		w = self.loop.io(fd, mask, ref=True, priority=None)
+		# callback only gets fd; we’ll re-derive the libcurl bitmask from mask
+		w.start(self._on_watcher_event, fd)
+
+		# stash both watcher _and_ the mask we asked for
+		self._watchers[fd] = {"watcher": w, "mask": mask}
+
+	def _on_watcher_event(self, fd: int):
+		"""
+		A gevent-watcher fired on `fd`.  Look up its mask and call curl.
+		"""
+		entry = self._watchers.get(fd)
+		if not entry:
+			return
+
+		mask = entry["mask"]
+		ev_bitmask = 0
+		if mask & GEVENT_READ:
+			ev_bitmask |= CURL_CSELECT_IN
+		if mask & GEVENT_WRITE:
+			ev_bitmask |= CURL_CSELECT_OUT
+
+		# this is exactly what you were doing before:
+		# call socket_action + info_read → _process_data
+		self._process_data(fd, ev_bitmask)

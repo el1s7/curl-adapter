@@ -8,7 +8,7 @@ from gevent.event import AsyncResult
 from gevent.lock import Semaphore
 
 if TYPE_CHECKING:
-	from gevent._types import _TimerWatcher
+	from gevent._types import _TimerWatcher, _IoWatcher
 
 
 GEVENT_READ = 1
@@ -35,13 +35,14 @@ class GeventPyCurl:
 		self.loop = gevent.get_hub().loop
 
 		self._timers: set[gevent.Greenlet] = set()
-		self._watchers = {}
+		self._watchers: dict[typing.Any, _IoWatcher] = {}
 
 		self._handles_list: typing.List[pycurl.Curl] = []
 		self._results: dict[pycurl.Curl, AsyncResult] = {}
 		self._callbacks: dict[pycurl.Curl, callable] = {}
 
 		self._checker = gevent.spawn(self._force_timeout)
+		
 		self._lock = Semaphore()
 
 		self._set_options()
@@ -94,8 +95,12 @@ class GeventPyCurl:
 				for timer in self._timers:
 					timer.kill(block=False)
 				self._timers = set()
+			elif timeout_ms == 0:
+				# immediate timeout; invoke directly
+				gevent.spawn(self._process_data, pycurl.SOCKET_TIMEOUT, pycurl.POLL_NONE)
 			else:
-				if timeout_ms >= 0:
+
+				if timeout_ms > 0:
 					# spawn a greenlet to run after timeout_ms milliseconds
 					timer = gevent.spawn_later(
 						timeout_ms / 1000.0,
@@ -104,18 +109,71 @@ class GeventPyCurl:
 						pycurl.POLL_NONE,
 					)
 					self._timers.add(timer)
-	
+					
 	def _socket_function(self, event, sockfd, multi, data):
-		gevent.spawn(self._socket_function_handler, event, sockfd, multi, data)
-	
-	def _socket_function_handler(self, event, sockfd, multi, data):
-		with self._lock:
-			if event & pycurl.POLL_IN:
-				self._add_reader(sockfd, self._process_data, sockfd, pycurl.CSELECT_IN)
-			if event & pycurl.POLL_OUT:
-				self._add_writer(sockfd, self._process_data, sockfd, pycurl.CSELECT_OUT)
-			if event & pycurl.POLL_REMOVE:
-				self._watchers.pop(sockfd, None)
+		"""Called by libcurl to tell us what it wants on this fd."""
+		want_read  = bool(event & pycurl.POLL_IN)
+		want_write = bool(event & pycurl.POLL_OUT)
+
+		# compute the new mask for gevent
+		new_mask = 0
+		if want_read:  new_mask |= GEVENT_READ
+		if want_write: new_mask |= GEVENT_WRITE
+
+		# teardown if libcurl says “remove”
+		if event & pycurl.POLL_REMOVE:
+			self._update_watcher(sockfd, 0)
+			return
+
+		# otherwise install/update the watcher
+		self._update_watcher(sockfd, new_mask)
+
+	def _update_watcher(self, fd: int, mask: int):
+		"""
+		Ensure there's exactly one I/O watcher for `fd` with the given mask.
+		If mask==0, we stop+remove it. If mask changes, we stop+recreate.
+		"""
+		entry = self._watchers.get(fd)
+
+		# nothing to do if mask didn’t change
+		if entry and entry["mask"] == mask:
+			return
+
+		# stop old watcher if any
+		if entry:
+			entry["watcher"].stop()
+			del self._watchers[fd]
+
+		# if new mask is zero, we’re done
+		if mask == 0:
+			return
+
+		# create a new watcher for read/write as needed
+		w = self.loop.io(fd, mask, ref=True, priority=None)
+		# callback only gets fd; we’ll re-derive the libcurl bitmask from mask
+		w.start(self._on_watcher_event, fd)
+
+		# stash both watcher _and_ the mask we asked for
+		self._watchers[fd] = {"watcher": w, "mask": mask}
+
+	def _on_watcher_event(self, fd: int):
+		"""
+		A gevent-watcher fired on `fd`.  Look up its mask and call curl.
+		"""
+		entry = self._watchers.get(fd)
+		if not entry:
+			return
+
+		mask = entry["mask"]
+		ev_bitmask = 0
+		if mask & GEVENT_READ:
+			ev_bitmask |= pycurl.CSELECT_IN
+		if mask & GEVENT_WRITE:
+			ev_bitmask |= pycurl.CSELECT_OUT
+
+		# this is exactly what you were doing before:
+		# call socket_action + info_read → _process_data
+		self._process_data(fd, ev_bitmask)
 
 	def _set_options(self):
 		self._curl_multi.setopt(pycurl.M_TIMERFUNCTION, self._timer_function)
@@ -176,34 +234,3 @@ class GeventPyCurl:
 		self._callback(curl, exception)
 		if result and not result.ready():
 			result.set_exception(exception)
-
-	def _remove_reader(self, fd):
-		watchers = self._watchers.get(fd)
-		if watchers and 'read' in watchers:
-			watchers['read'].stop()
-			del watchers['read']
-		if not watchers:
-			self._watchers.pop(fd, None)
-
-	def _remove_writer(self, fd):
-		watchers = self._watchers.get(fd)
-		if watchers and 'write' in watchers:
-			watchers['write'].stop()
-			del watchers['write']
-		if not watchers:
-			self._watchers.pop(fd, None)
-
-	def _add_reader(self, fd, callback, *args):
-		# mirror asyncio semantics: remove old first
-		self._remove_reader(fd)
-		# create & start a new read watcher
-		w = self.loop.io(fd, GEVENT_READ, ref=True, priority=None)
-		self._watchers.setdefault(fd, {})['read'] = w
-		w.start(callback, *args)
-
-	def _add_writer(self, fd, callback, *args):
-		self._remove_writer(fd)
-		w = self.loop.io(fd, GEVENT_WRITE, ref=True, priority=None)
-		self._watchers.setdefault(fd, {})['write'] = w
-		w.start(callback, *args)
-	

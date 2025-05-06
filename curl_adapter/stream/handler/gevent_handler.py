@@ -19,6 +19,7 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 
 		Gevent only. Uses low-level curl socket handlers & multi interface.
 	'''
+
 	def __init__(self, curl_instance, callback_after_perform=None, timeout=None, debug=False):
 		
 		super().__init__(curl_instance, callback_after_perform, timeout, debug)
@@ -31,7 +32,6 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 		self._future = None
 
 		self.chunk_queue = gevent.queue.Queue()
-
 
 	def _wait_for_headers(self):
 		self.initialized.wait()
@@ -58,9 +58,9 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 			self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
 			self.curl._ensure_cacert()
 
-			self._gevent_curl = GeventCurlCffi()
-			
-			self._future = self._gevent_curl.add_handle(
+			self._gevent_handler = GeventCurlCffi()
+
+			self._future = self._gevent_handler.add_handle(
 				self.curl,
 				cleanup_after_perform=self._cleanup_after_perform
 			)
@@ -68,9 +68,9 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 		elif isinstance(self.curl, pycurl.Curl):
 			self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
 		
-			self._gevent_curl = GeventPyCurl()
-			
-			self._future = self._gevent_curl.add_handle(
+			self._gevent_handler = GeventPyCurl()
+
+			self._future = self._gevent_handler.add_handle(
 				self.curl,
 				cleanup_after_perform=self._cleanup_after_perform
 			)
@@ -86,9 +86,9 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 		if hasattr(self, '_future') and self._future:
 			self._future.result() 
 
-		if hasattr(self, '_gevent_curl') and self._gevent_curl:
-			self._gevent_curl.close()
-
+		if hasattr(self, '_gevent_handler'):
+			self._gevent_handler.close()
+		
 		if self.debug:
 			print("[DEBUG] Closing.")
 
