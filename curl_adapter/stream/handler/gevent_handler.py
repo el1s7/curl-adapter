@@ -1,7 +1,7 @@
 import gevent.event
 import gevent.queue
 from gevent.event import AsyncResult
-
+import gevent.local
 
 import pycurl
 import curl_cffi.curl
@@ -9,8 +9,6 @@ from curl_cffi.curl import CurlOpt
 
 from curl_adapter.stream.sockets.curl_cffi_socket import GeventCurlCffi
 from curl_adapter.stream.sockets.pycurl_socket import GeventPyCurl
-
-import threading
 
 from .base import (
 	CurlStreamHandlerBase, 
@@ -24,10 +22,9 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 
 		Gevent only. Uses low-level curl socket handlers & multi interface.
 	'''
-	_local = threading.local()
-
-	_local._gevent_curl_cffi = GeventCurlCffi()
-	_local._gevent_pycurl = GeventPyCurl()
+	
+	gevent_curl_cffi = GeventCurlCffi()
+	gevent_pycurl = GeventPyCurl()
 
 	def __init__(self, curl_instance, callback_after_perform=None, timeout=None, debug=False):
 		
@@ -71,7 +68,7 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 			self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
 			self.curl._ensure_cacert()
 
-			self._future: AsyncResult = self._local._gevent_curl_cffi.add_handle(
+			self._future: AsyncResult = self.gevent_curl_cffi.add_handle(
 				self.curl,
 				cleanup_after_perform=self._cleanup_after_perform
 			)
@@ -79,7 +76,7 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 		elif isinstance(self.curl, pycurl.Curl):
 			self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
 
-			self._future = self._local._gevent_pycurl.add_handle(
+			self._future = self.gevent_pycurl.add_handle(
 				self.curl,
 				cleanup_after_perform=self._cleanup_after_perform
 			)
