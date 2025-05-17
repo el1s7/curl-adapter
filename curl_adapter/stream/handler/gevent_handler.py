@@ -90,7 +90,6 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 		
 		
 		if self._future and not self._future.ready():
-			# sometimes skipping this results in more successful tests? idk, maybe not
 			self._future.result()
 
 		if self.debug:
