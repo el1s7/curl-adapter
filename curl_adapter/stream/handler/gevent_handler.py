@@ -1,11 +1,16 @@
 import gevent.event
 import gevent.queue
+from gevent.event import AsyncResult
+
+
 import pycurl
 import curl_cffi.curl
 from curl_cffi.curl import CurlOpt
 
 from curl_adapter.stream.sockets.curl_cffi_socket import GeventCurlCffi
 from curl_adapter.stream.sockets.pycurl_socket import GeventPyCurl
+
+import threading
 
 from .base import (
 	CurlStreamHandlerBase, 
@@ -19,6 +24,10 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 
 		Gevent only. Uses low-level curl socket handlers & multi interface.
 	'''
+	_local = threading.local()
+
+	_local._gevent_curl_cffi = GeventCurlCffi()
+	_local._gevent_pycurl = GeventPyCurl()
 
 	def __init__(self, curl_instance, callback_after_perform=None, timeout=None, debug=False):
 		
@@ -34,7 +43,11 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 		self.chunk_queue = gevent.queue.Queue()
 
 	def _wait_for_headers(self):
-		self.initialized.wait()
+		_done = self.initialized.wait(timeout=self.event_timeout)
+
+		if not _done:
+			raise self.read_timeout_error
+		
 		if self.debug:
 			print("[DEBUG] Headers received.")
 	
@@ -58,19 +71,15 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 			self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
 			self.curl._ensure_cacert()
 
-			self._gevent_handler = GeventCurlCffi()
-
-			self._future = self._gevent_handler.add_handle(
+			self._future: AsyncResult = self._local._gevent_curl_cffi.add_handle(
 				self.curl,
 				cleanup_after_perform=self._cleanup_after_perform
 			)
 
 		elif isinstance(self.curl, pycurl.Curl):
 			self.curl.setopt(CurlOpt.WRITEFUNCTION, self._write_callback)
-		
-			self._gevent_handler = GeventPyCurl()
 
-			self._future = self._gevent_handler.add_handle(
+			self._future = self._local._gevent_pycurl.add_handle(
 				self.curl,
 				cleanup_after_perform=self._cleanup_after_perform
 			)
@@ -83,12 +92,11 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 		if self.debug:
 			print("[DEBUG] Starting to close...")
 		
-		if hasattr(self, '_future') and self._future:
-			self._future.result() 
-
-		if hasattr(self, '_gevent_handler'):
-			self._gevent_handler.close()
 		
+		if hasattr(self, '_future') and not self._future.ready():
+			# sometimes skipping this results in more successful tests? idk, maybe not
+			self._future.result()
+
 		if self.debug:
 			print("[DEBUG] Closing.")
 

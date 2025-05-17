@@ -19,7 +19,10 @@ class CurlStreamHandlerThreads(CurlStreamHandlerBase):
 	def _wait_for_headers(self):
 		if self.debug:
 			print("[DEBUG] Waiting for headers")
-		self.initialized.wait()
+		_done = self.initialized.wait(timeout=self.event_timeout)
+
+		if not _done:
+			raise self.read_timeout_error
 
 	def _wait_for_body(self):
 		if self.debug:

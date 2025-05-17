@@ -176,7 +176,7 @@ class TestFunctions:
 			assert int(curl_info["request_body_size"]) == 9
 
 	def test_timeout(self, curl_adapter):
-		with pytest.raises(requests.exceptions.ConnectTimeout) as err:
+		with pytest.raises(requests.exceptions.ReadTimeout) as err:
 			with requests.Session() as s:
 				s.mount("http://", curl_adapter())
 				s.mount("https://", curl_adapter())

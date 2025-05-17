@@ -37,14 +37,11 @@ class GeventPyCurl:
 		self._timers: set[gevent.Greenlet] = set()
 		self._watchers: dict[typing.Any, _IoWatcher] = {}
 
-		self._handles_list: typing.List[pycurl.Curl] = []
 		self._results: dict[pycurl.Curl, AsyncResult] = {}
 		self._callbacks: dict[pycurl.Curl, callable] = {}
 
-		self._checker = gevent.spawn(self._force_timeout)
+		self._checker = None #self._checker = gevent.spawn(self._force_timeout)
 		
-		self._lock = Semaphore()
-
 		self._set_options()
 	
 	def add_handle(self, curl: pycurl.Curl, cleanup_after_perform: typing.Callable[[typing.Optional[Exception]], None]=None):
@@ -56,7 +53,6 @@ class GeventPyCurl:
 		result = AsyncResult()
 		self._results[curl] = result
 		self._callbacks[curl] = cleanup_after_perform
-		self._handles_list.append(curl)
 
 		return result
 	
@@ -89,29 +85,30 @@ class GeventPyCurl:
 			timer.kill()
 	
 	def _timer_function(self, timeout_ms: int):
-		with self._lock:
-			# A timeout_ms value of -1 means you should delete the timer.
-			if timeout_ms == -1:
-				for timer in self._timers:
-					timer.kill(block=False)
-				self._timers = set()
-			elif timeout_ms == 0:
-				# immediate timeout; invoke directly
-				gevent.spawn(self._process_data, pycurl.SOCKET_TIMEOUT, pycurl.POLL_NONE)
-			else:
+		
+		# A timeout_ms value of -1 means you should delete the timer.
+		if timeout_ms == -1:
+			for timer in self._timers:
+				timer.kill(block=False)
+			self._timers = set()
+		elif timeout_ms == 0:
+			# immediate timeout; invoke directly
+			gevent.spawn(self._process_data, pycurl.SOCKET_TIMEOUT, pycurl.POLL_NONE)
+		else:
 
-				if timeout_ms > 0:
-					# spawn a greenlet to run after timeout_ms milliseconds
-					timer = gevent.spawn_later(
-						timeout_ms / 1000.0,
-						self._process_data,
-						pycurl.SOCKET_TIMEOUT,
-						pycurl.POLL_NONE,
-					)
-					self._timers.add(timer)
-					
+			if timeout_ms > 0:
+				# spawn a greenlet to run after timeout_ms milliseconds
+				timer = gevent.spawn_later(
+					timeout_ms / 1000.0,
+					self._process_data,
+					pycurl.SOCKET_TIMEOUT,
+					pycurl.POLL_NONE,
+				)
+				self._timers.add(timer)
+				
 	def _socket_function(self, event, sockfd, multi, data):
 		"""Called by libcurl to tell us what it wants on this fd."""
+
 		want_read  = bool(event & pycurl.POLL_IN)
 		want_write = bool(event & pycurl.POLL_OUT)
 
@@ -203,6 +200,7 @@ class GeventPyCurl:
 			for curl, errno, errmsg in err_list:
 				curl_error = pycurl.error(errno, errmsg)
 				self._set_exception(curl, curl_error)
+			
 			if num_q == 0:
 				break
 	
@@ -215,12 +213,12 @@ class GeventPyCurl:
 	def _callback(self, curl: pycurl.Curl, error: Exception=None):
 		if curl in self._callbacks:
 			callback = self._callbacks.pop(curl)
+			print("Calling callback?")
 			if callable(callback):
 				callback(error)
 	
 	def _pop_future(self, curl: pycurl.Curl):
 		self._curl_multi.remove_handle(curl)
-		self._handles_list.remove(curl)
 		return self._results.pop(curl, None)
 	
 	def _set_result(self, curl: pycurl.Curl):

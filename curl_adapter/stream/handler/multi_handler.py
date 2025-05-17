@@ -229,11 +229,11 @@ class CurlStreamHandlerMulti(CurlStreamHandlerBase):
 
 			# Init Multi
 			self.curl_multi = lib.curl_multi_init()
-			
+
 			lib.curl_multi_add_handle(self.curl_multi, self.curl._curl)
 			# running flag
 			self.curl_multi_running_pointer = ffi.new("int *", 0)
-	
+
 		elif isinstance(self.curl, pycurl.Curl):
 			self.curl.setopt(pycurl.WRITEFUNCTION, self._write_callback)
 

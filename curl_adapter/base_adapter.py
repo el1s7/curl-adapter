@@ -223,7 +223,7 @@ class BaseCurlAdapter(BaseAdapter):
 			CurlECode.PARTIAL_FILE: ChunkedEncodingError,
 	}
 
-	def curl_error_map(self, error: typing.Union[CurlError, pycurl.error]):
+	def curl_error_map(self, error: typing.Union[CurlError, pycurl.error], has_proxy=None):
 		
 		err_code = 0
 		if hasattr(error, 'code'):
@@ -236,8 +236,12 @@ class BaseCurlAdapter(BaseAdapter):
 
 		err_message = str(error)
 
-		if err_code == CurlECode.RECV_ERROR and "CONNECT" in err_message:
+		if err_code == CurlECode.RECV_ERROR and "CONNECT" in err_message and has_proxy:
 			return ProxyError
+
+		# Read timeout
+		if err_code == 28 and ("Read timeout." in err_message or "Operation too slow." in err_message):
+			return requests.exceptions.ReadTimeout
 		
 		return self.CODE2ERROR.get(err_code, RequestException)
 
@@ -617,7 +621,7 @@ class BaseCurlAdapter(BaseAdapter):
 			raise ConnectionError(e, request=request)
 		
 		except (CurlError, pycurl.error) as e:
-			error_to_throw = self.curl_error_map(e)
+			error_to_throw = self.curl_error_map(e, has_proxy=proxies)
 			raise error_to_throw(e, request=request)
 
 		except Exception as e:

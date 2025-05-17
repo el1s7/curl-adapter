@@ -38,46 +38,42 @@ def timer_function(curlm, timeout_ms: int, clientp: "GeventCurlCffi"):
 	gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
 
 	# A timeout_ms value of -1 means you should delete the timer.
-	with gevent_curl._lock:
 		# A timeout_ms value of -1 means you should delete the timer.
-		if timeout_ms == -1:
-			for timer in gevent_curl._timers:
-				timer.kill(block=False)
-			gevent_curl._timers = set()
-
-		elif timeout_ms == 0:
-			# immediate timeout; invoke directly
-			gevent.spawn(gevent_curl._process_data, CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
-
-		else:
-			if timeout_ms > 0:
-				# schedule one timer
-				# spawn a greenlet to run after timeout_ms milliseconds
-				timer = gevent.spawn_later(
-						timeout_ms / 1000.0,
-						gevent_curl._process_data,
-						CURL_SOCKET_TIMEOUT,
-						CURL_POLL_NONE,
-					)
-				gevent_curl._timers.add(timer)
+	if timeout_ms == -1:
+		for timer in gevent_curl._timers:
+			timer.kill(block=False)
+		gevent_curl._timers = set()
+	elif timeout_ms == 0:
+		# immediate timeout; invoke directly
+		gevent.spawn(gevent_curl._process_data, CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
+	else:
+		if timeout_ms > 0:
+			# schedule one timer
+			# spawn a greenlet to run after timeout_ms milliseconds
+			timer = gevent.spawn_later(
+					timeout_ms / 1000.0,
+					gevent_curl._process_data,
+					CURL_SOCKET_TIMEOUT,
+					CURL_POLL_NONE,
+				)
+			gevent_curl._timers.add(timer)
 			
 @ffi.def_extern()
 def socket_function(curlm, sockfd: int, what: int, clientp: "GeventCurlCffi", data: Any):
 	gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
-
 	want_read  = bool(what & CURL_POLL_IN)
 	want_write = bool(what & CURL_POLL_OUT)
-	
+
 	# compute the new mask for gevent
 	new_mask = 0
 	if want_read:  new_mask |= GEVENT_READ
 	if want_write: new_mask |= GEVENT_WRITE
-	
+
 	# teardown if libcurl says “remove”
 	if what & CURL_POLL_REMOVE:
 		gevent_curl._update_watcher(sockfd, 0)
 		return
-	
+
 	# otherwise install/update the watcher
 	gevent_curl._update_watcher(sockfd, new_mask)
 	
@@ -107,18 +103,14 @@ class GeventCurlCffi:
 		self._results: dict[Curl, AsyncResult] = {}
 		self._handles: dict[ffi.CData, Curl] = {}
 		self._callbacks: dict[Curl, callable] = {}
-
+		
 		self._checker = gevent.spawn(self._force_timeout)
 
-		self._lock = Semaphore()
-		
 		self._set_options()
 
 	def add_handle(self, curl: Curl, cleanup_after_perform: typing.Callable[[typing.Optional[Exception]], None]=None):
 		"""Add a curl handle to be managed by curl_multi. This is the equivalent of
 		`perform` in the async world."""
-
-		curl._ensure_cacert()
 
 		lib.curl_multi_add_handle(self._curl_multi, curl._curl)
 		result = AsyncResult()
@@ -200,7 +192,7 @@ class GeventCurlCffi:
 					self._set_result(curl)
 				else:
 					# import pdb; pdb.set_trace()
-					curl_error =  curl._get_error(retcode, "perform")
+					curl_error = curl._get_error(retcode, "perform")
 					self._set_exception(curl, curl_error)
 	
 	def _force_timeout(self):

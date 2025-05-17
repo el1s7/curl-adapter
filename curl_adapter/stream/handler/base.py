@@ -4,6 +4,7 @@ import threading
 import typing
 import traceback
 
+from curl_cffi import CurlECode, CurlError
 import pycurl
 import curl_cffi.curl
 from curl_cffi.curl import CurlOpt
@@ -23,20 +24,62 @@ class CurlStreamHandlerBase():
         Curl Stream Handler (c) 2025 by Elis K.
 	'''
 
-	def __init__(self, curl_instance: typing.Union[curl_cffi.Curl, pycurl.Curl], callback_after_perform=None, timeout=None, debug=False):
+	def __init__(self, 
+		curl_instance: typing.Union[curl_cffi.Curl, pycurl.Curl], 
+		callback_after_perform: typing.Callable[[typing.Union[curl_cffi.Curl, pycurl.Curl]], None]=None, 
+		timeout: typing.Union[float, int, typing.Tuple[float, float], None]=None, 
+		debug: bool=False
+	):
 		'''
 			Initialize the stream handler.
 		'''
 		self.curl = curl_instance
 		
+		self.curl_type: typing.Literal["curl_cffi", "pycurl"] = "curl_cffi" if isinstance(self.curl, curl_cffi.Curl) else (
+			 "pycurl" if isinstance(self.curl, pycurl.Curl) else None
+		)
+
+		self.read_timeout = timeout[1] if isinstance(timeout, tuple) else timeout
+
+		self.event_timeout = self.read_timeout + 5 if self.read_timeout else None
+		'''
+			Timeout 'wait' events once the read timeout has already passed. To avoid blocking forever.
+		'''
+
+		self.read_timeout_error = (
+			CurlError("Read timeout.", CurlECode.OPERATION_TIMEDOUT) if self.curl_type == "curl_cffi" 
+			else pycurl.error(28, "Read timeout.")
+		)
+		
+		if not self.curl_type:
+			raise TypeError("Invalid curl class object.")
+		
 		# Events
-		self.quit_event: threading.Event = _THREAD_EVENT()  # Signal to stop streaming
-		self.initialized: threading.Event = _THREAD_EVENT() # Event to set when we receive the first bytes of body, that's how we know that the headers are ready
-		self.perform_finished: threading.Event = _THREAD_EVENT() # Body has finished reading
+		self.quit_event: threading.Event = _THREAD_EVENT()
+		'''
+			Signal to stop
+		'''
+		
+		self.initialized: threading.Event = _THREAD_EVENT() 
+		'''
+			Event to set when we receive the first bytes of body, that's how we know that the headers are ready
+		'''
+
+		self.perform_finished: threading.Event = _THREAD_EVENT()
+		'''
+			Body has finished reading
+		'''
 
 		# Body streaming
-		self.chunk_queue: queue.Queue = _THREAD_QUEUE_MODULE.Queue()  # Thread-safe queue for streaming data
-		self._leftover = bytearray()  # buffer for leftover data when chunk > requested
+		self.chunk_queue: queue.Queue = _THREAD_QUEUE_MODULE.Queue()
+		'''
+			Thread-safe queue for streaming data
+		'''
+
+		self._leftover = bytearray()
+		'''
+			buffer for leftover data when chunk > requested
+		'''
 
 		self.callback_after_perform = callback_after_perform
 		self.debug = debug
