@@ -93,7 +93,7 @@ class CurlStreamHandlerGevent(CurlStreamHandlerBase):
 			print("[DEBUG] Starting to close...")
 		
 		
-		if hasattr(self, '_future') and not self._future.ready():
+		if self._future and not self._future.ready():
 			# sometimes skipping this results in more successful tests? idk, maybe not
 			self._future.result()
 
