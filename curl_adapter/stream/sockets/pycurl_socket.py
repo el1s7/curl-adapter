@@ -207,13 +207,11 @@ class GeventPyCurl:
 	def _force_timeout(self):
 		while self._curl_multi:
 			gevent.sleep(1)
-			#print("force timeout")
 			self._socket_action(pycurl.SOCKET_TIMEOUT, pycurl.POLL_NONE)
 			
 	def _callback(self, curl: pycurl.Curl, error: Exception=None):
 		if curl in self._callbacks:
 			callback = self._callbacks.pop(curl)
-			print("Calling callback?")
 			if callable(callback):
 				callback(error)
 	

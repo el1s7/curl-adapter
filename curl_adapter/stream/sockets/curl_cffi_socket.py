@@ -191,14 +191,12 @@ class GeventCurlCffi:
 				if retcode == 0:
 					self._set_result(curl)
 				else:
-					# import pdb; pdb.set_trace()
 					curl_error = curl._get_error(retcode, "perform")
 					self._set_exception(curl, curl_error)
 	
 	def _force_timeout(self):
 		while self._curl_multi:
 			gevent.sleep(1)
-			#print("force timeout")
 			self._socket_action(CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
 
 	def _pop_future(self, curl: Curl):
