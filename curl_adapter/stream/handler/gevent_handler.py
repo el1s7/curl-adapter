@@ -1,7 +1,6 @@
 import gevent.event
 import gevent.queue
 from gevent.event import AsyncResult
-import gevent.local
 
 import pycurl
 import curl_cffi.curl
