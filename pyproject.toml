@@ -14,7 +14,7 @@ authors = [{name = "Elis K.", email = "github@elis.cc"}]
 keywords = ["curl", "requests", "adapter", "tls fingerprint", "pycurl", "curl_cffi", "curl impersonate"]
 dependencies = [
     "requests",
-    "curl_cffi",
+    "curl_cffi >= 0.11.0",
     "pycurl",
     "brotli"
 ]
