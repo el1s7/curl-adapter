@@ -10,3 +10,5 @@ other
 build
 *.whl
 curl_cffi_builds
+BENCHMARK.md
+tests/benchmark.py
