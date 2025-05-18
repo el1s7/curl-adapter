@@ -37,25 +37,27 @@ class CurlStreamHandlerMulti(CurlStreamHandlerBase):
 		#  This functions reads & saves data to our queue, one chunk at a time. Non‐blocking pass over sockets.
 		err_code = lib.curl_multi_perform(self.curl_multi, self.curl_multi_running_pointer)
 
-		# ask for the next timeout
-		if self.curl_multi_running_pointer[0]:
-			try:
-				tptr = ffi.new("long *")
-				lib.curl_multi_timeout(self.curl_multi, tptr)
-				ms = tptr[0]
-				if ms < 0:
-					ms = 1000   # or whatever “default” poll interval you like
-   				# block here until either a socket event *or* the timeout elapses
-				nfds = ffi.new("int *", 0)
-				lib.curl_multi_wait(self.curl_multi, ffi.NULL, 0, int(ms), nfds)
-			except Exception as e:
-				if self.debug:
-					traceback.print_exc()
-
 		transfer_complete = False
 
 		# Get any messages for curl handle
 		if (not err_code or err_code == -1):
+			
+			# ask for the next timeout
+			if self.curl_multi_running_pointer[0]:
+				try:
+					tptr = ffi.new("long *")
+					lib.curl_multi_timeout(self.curl_multi, tptr)
+					ms = tptr[0]
+					if ms < 0:
+						ms = 1000   # or whatever “default” poll interval you like
+   					# block here until either a socket event *or* the timeout elapses
+					nfds = ffi.new("int *", 0)
+					lib.curl_multi_wait(self.curl_multi, ffi.NULL, 0, int(ms), nfds)
+				except Exception as e:
+					if self.debug:
+						traceback.print_exc()
+
+			# drain messages
 			try:
 				msgq = ffi.new("int *", 0)
 				while True:
@@ -145,16 +147,23 @@ class CurlStreamHandlerMulti(CurlStreamHandlerBase):
 	
 	def _cleanup_after_perform(self):
 		try:
-			if hasattr(self.curl_multi, 'remove_handle'):
+
+			if self.curl_type == "pycurl":
 				self.curl_multi.remove_handle(self.curl)
-				self.curl_multi.close()
-			else:
+			
+			elif self.curl_type == "curl_cffi":
 				lib.curl_multi_remove_handle(self.curl_multi, self.curl._curl)
-				lib.curl_multi_cleanup(self.curl_multi)
+
 		except Exception:
 			if self.debug:
 				traceback.print_exc()
 		finally:
+
+			if self.curl_type == "pycurl":
+				self.curl_multi.close()
+			elif self.curl_type == "curl_cffi":
+				lib.curl_multi_cleanup(self.curl_multi)
+			
 			self.curl_multi_running_pointer = None
 			self.curl_multi = None
 		

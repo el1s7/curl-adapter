@@ -35,18 +35,23 @@ class GeventPyCurl:
 		self.loop = gevent.get_hub().loop
 
 		self._timers: set[gevent.Greenlet] = set()
-		self._watchers: dict[typing.Any, _IoWatcher] = {}
+		self._watchers: dict[typing.Any, dict[str, _IoWatcher]] = {}
 
 		self._results: dict[pycurl.Curl, AsyncResult] = {}
 		self._callbacks: dict[pycurl.Curl, callable] = {}
 
-		self._checker = None #self._checker = gevent.spawn(self._force_timeout)
+		self._checker: gevent.Greenlet = None #self._checker = gevent.spawn(self._force_timeout)
 		
+		self._start_closing = False
+
 		self._set_options()
 	
 	def add_handle(self, curl: pycurl.Curl, cleanup_after_perform: typing.Callable[[typing.Optional[Exception]], None]=None):
 		"""Add a curl handle to be managed by curl_multi. This is the equivalent of
 		`perform` in the async world."""
+
+		if self._start_closing:
+			raise RuntimeError("This curl_multi instance is closed.")
 
 		self._curl_multi.add_handle(curl)
 	
@@ -60,25 +65,30 @@ class GeventPyCurl:
 		"""Cancel is not natively supported in gevent.AsyncResult."""
 		self._set_exception(curl, RuntimeError("Cancelled"))
 	
+	def graceful_close(self):
+		self._start_closing = True
+
 	def close(self):
 		"""Close and cleanup running timers, readers, writers and handles."""
 		 # Close and wait for the force timeout checker to complete
 
 		if self._checker and not self._checker.dead:
-			self._checker.kill()
+			self._checker.kill(block=False)
 
 		# Close all pending futures (if any)
-		for curl in self._results:
+		for curl in list(self._results.keys()):
 			self.cancel_handle(curl)
 			
 		# Cleanup curl_multi handle
 		self._curl_multi.close()
 		self._curl_multi = None
 
-		# Remove add readers and writers
-		for sockfd in self._watchers:
-			self._remove_reader(sockfd)
-			self._remove_writer(sockfd)
+		# Remove watchers
+		for sockfd, entry in list(self._watchers.items()):
+			if entry.get("watcher"):
+				entry.get("watcher").stop()      # stop monitoring
+				entry.get("watcher").close()      # dispose of the watcher
+				del self._watchers[sockfd]
 
 		# Cancel all time functions
 		for timer in list(self._timers):
@@ -93,7 +103,8 @@ class GeventPyCurl:
 			self._timers = set()
 		elif timeout_ms == 0:
 			# immediate timeout; invoke directly
-			gevent.spawn(self._process_data, pycurl.SOCKET_TIMEOUT, pycurl.POLL_NONE)
+			timer = gevent.spawn(self._process_data, pycurl.SOCKET_TIMEOUT, pycurl.POLL_NONE)
+			self._timers.add(timer)
 		else:
 
 			if timeout_ms > 0:
@@ -139,6 +150,7 @@ class GeventPyCurl:
 		# stop old watcher if any
 		if entry:
 			entry["watcher"].stop()
+			entry["watcher"].close()
 			del self._watchers[fd]
 
 		# if new mask is zero, we’re done
@@ -193,6 +205,8 @@ class GeventPyCurl:
 		self._socket_action(sockfd, ev_bitmask)
 
 		while True:
+			if not self._curl_multi:
+				break
 			num_q, ok_list, err_list = self._curl_multi.info_read()
 			for curl in ok_list:
 				self._set_result(curl)
@@ -225,8 +239,14 @@ class GeventPyCurl:
 		if result and not result.ready():
 			result.set(None)
 
+		if self._start_closing and not self._results:
+			self.close()
+
 	def _set_exception(self, curl: pycurl.Curl, exception):
 		result = self._pop_future(curl)
 		self._callback(curl, exception)
 		if result and not result.ready():
 			result.set_exception(exception)
+
+		if self._start_closing and not self._results:
+			self.close()

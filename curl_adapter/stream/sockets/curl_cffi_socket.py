@@ -38,14 +38,14 @@ def timer_function(curlm, timeout_ms: int, clientp: "GeventCurlCffi"):
 	gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
 
 	# A timeout_ms value of -1 means you should delete the timer.
-		# A timeout_ms value of -1 means you should delete the timer.
 	if timeout_ms == -1:
 		for timer in gevent_curl._timers:
 			timer.kill(block=False)
 		gevent_curl._timers = set()
 	elif timeout_ms == 0:
 		# immediate timeout; invoke directly
-		gevent.spawn(gevent_curl._process_data, CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
+		timer = gevent.spawn(gevent_curl._process_data, CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
+		gevent_curl._timers.add(timer)
 	else:
 		if timeout_ms > 0:
 			# schedule one timer
@@ -98,7 +98,7 @@ class GeventCurlCffi:
 		self.loop = gevent.get_hub().loop
 
 		self._timers: set[gevent.Greenlet] = set()
-		self._watchers: dict[typing.Any, _IoWatcher] = {}
+		self._watchers: dict[typing.Any, dict[str, _IoWatcher]] = {}
 
 		self._results: dict[Curl, AsyncResult] = {}
 		self._handles: dict[ffi.CData, Curl] = {}
@@ -106,13 +106,28 @@ class GeventCurlCffi:
 		
 		self._checker = gevent.spawn(self._force_timeout)
 
+		self._start_closing = False
+
 		self._set_options()
 
 	def add_handle(self, curl: Curl, cleanup_after_perform: typing.Callable[[typing.Optional[Exception]], None]=None):
 		"""Add a curl handle to be managed by curl_multi. This is the equivalent of
 		`perform` in the async world."""
 
-		lib.curl_multi_add_handle(self._curl_multi, curl._curl)
+		if self._start_closing:
+			raise RuntimeError("This curl_multi instance is closed.")
+
+		code = lib.curl_multi_add_handle(self._curl_multi, curl._curl)
+		
+		if code != 0:
+			curl_error = curl._get_error(code, "perform")
+			self._set_exception(curl, RuntimeError(f"curl_multi_add_handle failed: {curl_error}"))
+			
+			# return a future that’s already failed
+			result = AsyncResult()
+			result.set_exception(RuntimeError(curl_error))
+			return result
+		
 		result = AsyncResult()
 		self._results[curl] = result
 		self._callbacks[curl] = cleanup_after_perform
@@ -125,27 +140,35 @@ class GeventCurlCffi:
 
 		# No true cancellation; set an exception or drop reference
 		self._set_exception(curl, RuntimeError("Cancelled"))
-		
+
+	def graceful_close(self):
+		self._start_closing = True
+
 	def close(self):
 		"""Close and cleanup running timers, readers, writers and handles."""
 		 # Close and wait for the force timeout checker to complete
 
 		if self._checker and not self._checker.dead:
-			self._checker.kill()
+			self._checker.kill(block=False)
 
 		# Close all pending futures
-		for curl in self._results:
+		for curl in list(self._results.keys()):
 			self.cancel_handle(curl)
 			
 		# Cleanup curl_multi handle
 		if self._curl_multi:
-			lib.curl_multi_cleanup(self._curl_multi)
+			ref_curl_multi = self._curl_multi
 			self._curl_multi = None
+			lib.curl_multi_cleanup(ref_curl_multi)
+			ref_curl_multi = None
+			
 
-		# Remove add readers and writers
-		for sockfd in self._watchers:
-			self._remove_reader(sockfd)
-			self._remove_writer(sockfd)
+		# Remove watchers
+		for sockfd, entry in list(self._watchers.items()):
+			if entry.get("watcher"):
+				entry.get("watcher").stop()      # stop monitoring
+				entry.get("watcher").close()      # dispose of the watcher
+				del self._watchers[sockfd]
 
 		# Cancel all time functions
 		for timer in list(self._timers):
@@ -179,6 +202,9 @@ class GeventCurlCffi:
 
 		msg_in_queue = ffi.new("int *")
 		while True:
+			if not self._curl_multi:
+				break
+			
 			curl_msg = lib.curl_multi_info_read(self._curl_multi, msg_in_queue)
 			# print("message in queue", msg_in_queue[0], curl_msg)
 			if curl_msg == ffi.NULL:
@@ -215,12 +241,19 @@ class GeventCurlCffi:
 		self._callback(curl)
 		if result and not result.ready():
 			result.set(None)
+
+		if self._start_closing and not self._results:
+			self.close()
 		
 	def _set_exception(self, curl: Curl, exception):
 		result = self._pop_future(curl)
 		self._callback(curl, exception)
+		
 		if result and not result.ready():
 			result.set_exception(exception)
+
+		if self._start_closing and not self._results:
+			self.close()
 
 	def _update_watcher(self, fd: int, mask: int):
 		"""
@@ -236,6 +269,7 @@ class GeventCurlCffi:
 		# stop old watcher if any
 		if entry:
 			entry["watcher"].stop()
+			entry["watcher"].close()
 			del self._watchers[fd]
 
 		# if new mask is zero, we’re done
