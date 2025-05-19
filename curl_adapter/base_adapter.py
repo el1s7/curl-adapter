@@ -16,7 +16,6 @@ from urllib3._collections import HTTPHeaderDict
 
 import requests
 
-
 from requests.utils import (
 	DEFAULT_CA_BUNDLE_PATH,
 	extract_zipped_paths,
@@ -556,6 +555,7 @@ class BaseCurlAdapter(BaseAdapter):
 		# content decoding
 		if self.use_curl_content_decoding:
 			curl.setopt(CurlOpt.HTTP_CONTENT_DECODING, 1)
+			curl.setopt(CurlOpt.ACCEPT_ENCODING, "gzip, deflate, br, zstd")
 		else:
 			curl.setopt(CurlOpt.HTTP_CONTENT_DECODING, 0)
 			curl.setopt(CurlOpt.HTTP_TRANSFER_DECODING, 1)

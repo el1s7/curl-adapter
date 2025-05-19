@@ -1,6 +1,3 @@
-
-
-import queue
 import traceback
 
 import pycurl
@@ -20,10 +17,9 @@ from ._thread_env import (
 )
 
 
-
 class CurlStreamHandlerMulti(CurlStreamHandlerBase):
 	'''
-        Curl Stream Handler (c) 2025 by Elis K.
+		Curl Stream Handler (c) 2025 by Elis K.
 
 		Using curl's multi interface and Python's coroutines.
 	'''
@@ -100,10 +96,9 @@ class CurlStreamHandlerMulti(CurlStreamHandlerBase):
 			
 			# Blocking poll sleep before next call
 			ms = self.curl_multi.timeout()
-			timeout = max(ms, 0) 
-			if timeout < 0:
-				timeout = 1000
-			self.curl_multi.select(timeout / 1000.0)
+			if ms < 0:
+				ms = 1000
+			self.curl_multi.select(ms / 1000.0)
 
 			# I don't know why we need to run perform again straight away after socket select, but it works for reading the error messages, so let's leave it like that
 			err_code, running = self.curl_multi.perform()

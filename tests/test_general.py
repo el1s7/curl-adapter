@@ -54,10 +54,12 @@ class TestFunctions:
 			assert r.json()["gzipped"]
 
 	def test_brotli(self, curl_adapter):
-		# This fails for PyCurl because PyCurl doesn't support brotli decoding by itself.
 		
 		if curl_adapter is PyCurlAdapter or hasattr(curl_adapter, "binded_adapter") and curl_adapter.binded_adapter is PyCurlAdapter:
-			pytest.skip("PyCurl because PyCurl doesn't support brotli decoding by itself.")
+			# pytest.skip("PyCurl because PyCurl doesn't support brotli decoding by itself.")
+			# Supported in newer versions of pycurl, so we don't need to skip this test anymore.
+			pass
+			
 		
 		with requests.Session() as s:
 			s.mount("http://", curl_adapter(use_curl_content_decoding=True))

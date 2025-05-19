@@ -19,6 +19,7 @@ from .stream.handler.base import CurlStreamHandlerBase
 
 from .base_adapter import BaseCurlAdapter
 
+
 class CurlAdapterConfigurationOptions(TypedDict):
 	ja3_str: str
 	permute: bool

@@ -1,4 +1,3 @@
-
 import queue
 import threading
 import typing
@@ -21,7 +20,7 @@ class QueueContinueRead(Exception):
 
 class CurlStreamHandlerBase():
 	'''
-        Curl Stream Handler (c) 2025 by Elis K.
+		Curl Stream Handler (c) 2025 by Elis K.
 	'''
 
 	def __init__(self, 
