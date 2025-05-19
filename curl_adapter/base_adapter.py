@@ -436,7 +436,7 @@ class BaseCurlAdapter(BaseAdapter):
 		):
 		
 		if self.debug:
-			print("Sending: ", url, request.headers, timeout, proxies)
+			print("[DEBUG] Sending: ", url, request.headers, timeout, proxies)
 		# url
 		curl.setopt(CurlOpt.URL, url.encode())
 
