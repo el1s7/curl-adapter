@@ -12,7 +12,7 @@ from gevent.event import AsyncResult
 from gevent.lock import Semaphore
 
 if TYPE_CHECKING:
-	from gevent._types import _TimerWatcher, _IoWatcher
+	from gevent._types import _IoWatcher # type: ignore
 
 CURL_POLL_NONE = 0
 CURL_POLL_IN = 1
