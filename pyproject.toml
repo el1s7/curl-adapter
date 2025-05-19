@@ -15,7 +15,7 @@ keywords = ["curl", "requests", "adapter", "tls fingerprint", "pycurl", "curl_cf
 dependencies = [
     "requests",
     "curl_cffi >= 0.11.0",
-    "pycurl",
+    "pycurl >= 7.45.5",
     "brotli"
 ]
 
