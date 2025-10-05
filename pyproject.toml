@@ -30,3 +30,8 @@ test = ["pytest"]
 [tool.setuptools.packages.find]
 include = ["curl_adapter"]
 exclude = ["other"]
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "gevent>=25.9.1",
+]
