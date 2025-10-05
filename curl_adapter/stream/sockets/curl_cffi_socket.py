@@ -37,26 +37,36 @@ def timer_function(curlm, timeout_ms: int, clientp: "GeventCurlCffi"):
 
 	gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
 
-	# A timeout_ms value of -1 means you should delete the timer.
+	if gevent_curl._timer:
+		gevent_curl._timer.kill(block=False)
+		gevent_curl._timer = None
+
+	if not gevent_curl._curl_multi:
+		# Don't schedule timers if multi handle is gone.
+		return 0
+
 	if timeout_ms == -1:
-		for timer in gevent_curl._timers:
-			timer.kill(block=False)
-		gevent_curl._timers = set()
-	elif timeout_ms == 0:
+		# A timeout_ms value of -1 means you should delete the timer, we already did.
+		return 0
+
+	if timeout_ms == 0:
 		# immediate timeout; invoke directly
-		timer = gevent.spawn(gevent_curl._process_data, CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
-		gevent_curl._timers.add(timer)
-	else:
-		if timeout_ms > 0:
-			# schedule one timer
-			# spawn a greenlet to run after timeout_ms milliseconds
-			timer = gevent.spawn_later(
-					timeout_ms / 1000.0,
-					gevent_curl._process_data,
-					CURL_SOCKET_TIMEOUT,
-					CURL_POLL_NONE,
-				)
-			gevent_curl._timers.add(timer)
+		gevent_curl._timer = gevent.spawn(
+			gevent_curl._process_data, 
+			CURL_SOCKET_TIMEOUT, 
+			CURL_POLL_NONE
+		)
+	elif timeout_ms > 0:
+		# schedule one timer
+		# spawn a greenlet to run after timeout_ms milliseconds
+		gevent_curl._timer = gevent.spawn_later(
+				timeout_ms / 1000.0,
+				gevent_curl._process_data,
+				CURL_SOCKET_TIMEOUT,
+				CURL_POLL_NONE,
+		)
+	
+	return 0
 			
 @ffi.def_extern()
 def socket_function(curlm, sockfd: int, what: int, clientp: "GeventCurlCffi", data: Any):
@@ -72,10 +82,12 @@ def socket_function(curlm, sockfd: int, what: int, clientp: "GeventCurlCffi", da
 	# teardown if libcurl says “remove”
 	if what & CURL_POLL_REMOVE:
 		gevent_curl._update_watcher(sockfd, 0)
-		return
+		return 0
 
 	# otherwise install/update the watcher
 	gevent_curl._update_watcher(sockfd, new_mask)
+
+	return 0
 	
 class GeventCurlCffi:
 	'''
@@ -97,12 +109,12 @@ class GeventCurlCffi:
 		
 		self.loop = gevent.get_hub().loop
 
-		self._timers: set[gevent.Greenlet] = set()
+		self._timer: typing.Optional[gevent.Greenlet] = None
 		self._watchers: dict[typing.Any, dict[str, _IoWatcher]] = {}
 
 		self._results: dict[Curl, AsyncResult] = {}
 		self._handles: dict[ffi.CData, Curl] = {}
-		self._callbacks: dict[Curl, callable] = {}
+		self._callbacks: dict[Curl, typing.Callable] = {}
 		
 		self._checker = gevent.spawn(self._force_timeout)
 
@@ -170,9 +182,10 @@ class GeventCurlCffi:
 				entry.get("watcher").close()      # dispose of the watcher
 				del self._watchers[sockfd]
 
-		# Cancel all time functions
-		for timer in list(self._timers):
-			timer.kill()
+		# Kill timer
+		if self._timer is not None:
+			self._timer.kill(block=False)
+			self._timer = None
 
 	def _set_options(self):
 		lib.curl_multi_setopt(self._curl_multi, CurlMOpt.TIMERFUNCTION, lib.timer_function)

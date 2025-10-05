@@ -34,7 +34,7 @@ class GeventPyCurl:
 		
 		self.loop = gevent.get_hub().loop
 
-		self._timers: set[gevent.Greenlet] = set()
+		self._timer: typing.Optional[gevent.Greenlet] = None
 		self._watchers: dict[typing.Any, dict[str, _IoWatcher]] = {}
 
 		self._results: dict[pycurl.Curl, AsyncResult] = {}
@@ -90,32 +90,40 @@ class GeventPyCurl:
 				entry.get("watcher").close()      # dispose of the watcher
 				del self._watchers[sockfd]
 
-		# Cancel all time functions
-		for timer in list(self._timers):
-			timer.kill()
+		# Kill timer
+		if self._timer is not None:
+			self._timer.kill(block=False)
+			self._timer = None
 	
 	def _timer_function(self, timeout_ms: int):
 		
-		# A timeout_ms value of -1 means you should delete the timer.
-		if timeout_ms == -1:
-			for timer in self._timers:
-				timer.kill(block=False)
-			self._timers = set()
-		elif timeout_ms == 0:
-			# immediate timeout; invoke directly
-			timer = gevent.spawn(self._process_data, pycurl.SOCKET_TIMEOUT, pycurl.POLL_NONE)
-			self._timers.add(timer)
-		else:
+		if self._timer:
+			self._timer.kill(block=False)
+			self._timer = None
 
-			if timeout_ms > 0:
+		if not self._curl_multi:
+			# Don't schedule timers if multi handle is gone.
+			return 0
+
+		if timeout_ms == -1:
+			# A timeout_ms value of -1 means you should delete the timer, we already did.
+			return 0
+
+		if timeout_ms == 0:
+			self._timer = gevent.spawn(
+				self._process_data, 
+				pycurl.SOCKET_TIMEOUT, 
+				pycurl.POLL_NONE
+			)
+		elif timeout_ms > 0:
 				# spawn a greenlet to run after timeout_ms milliseconds
-				timer = gevent.spawn_later(
+				self._timer = gevent.spawn_later(
 					timeout_ms / 1000.0,
 					self._process_data,
 					pycurl.SOCKET_TIMEOUT,
 					pycurl.POLL_NONE,
 				)
-				self._timers.add(timer)
+		return 0
 				
 	def _socket_function(self, event, sockfd, multi, data):
 		"""Called by libcurl to tell us what it wants on this fd."""
