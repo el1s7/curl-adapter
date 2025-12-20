@@ -203,13 +203,16 @@ class CurlStreamResponse(HTTPResponse):
 			#self.close()
 			pass
 
-	def _decode(self, data, decode_content, flush_decoder):
+	def _decode(self, data, decode_content, flush_decoder, max_length=None):
 		"""
 			Curl automatically decodes content if the "Accept" header is present.
 		"""
 		if not self._handle_content_decoding:
 			return data
 
+		# urllib3 >= 2.6.0 passes max_length parameter
+		if max_length is not None:
+			return super()._decode(data, decode_content, flush_decoder, max_length)
 		return super()._decode(data, decode_content, flush_decoder)
 
 
