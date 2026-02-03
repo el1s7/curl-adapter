@@ -202,3 +202,15 @@ class TestFunctions:
 			assert r.status_code == 200
 
 
+@pytest.mark.parametrize("adapter_class", [CurlCffiAdapter, PyCurlAdapter])
+def test_thread_local_curl_isolated_per_adapter_instance(adapter_class):
+	adapter_one = adapter_class(use_thread_local_curl=True, stream_handler=CurlStreamHandlerBase)
+	adapter_two = adapter_class(use_thread_local_curl=True, stream_handler=CurlStreamHandlerBase)
+
+	try:
+		assert adapter_one.curl is not adapter_two.curl
+	finally:
+		adapter_one.close()
+		adapter_two.close()
+
+

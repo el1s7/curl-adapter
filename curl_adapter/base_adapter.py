@@ -81,13 +81,15 @@ class CurlInfo(TypedDict):
 	namelookup_time: int
 	has_used_proxy: int
 
+
+def get_curl_info(response: requests.Response) -> CurlInfo:
+	return response.curl_info
+
 class Response(requests.Response):
 	curl_info: CurlInfo
 	wait_for_body: typing.Callable[[], None]
 
 class BaseCurlAdapter(BaseAdapter):
-	
-	_local = threading.local()
 
 	def __init__(self, 
 		curl_class: typing.Union[curl_cffi.Curl, pycurl.Curl],
@@ -96,7 +98,6 @@ class BaseCurlAdapter(BaseAdapter):
 		use_thread_local_curl=True,
 		stream_handler: CurlStreamHandlerBase=None
 	):
-		
 		self.curl_class: typing.Union[curl_cffi.Curl, pycurl.Curl] = curl_class
 		self.debug = debug
 		self.use_curl_content_decoding = use_curl_content_decoding
@@ -106,6 +107,14 @@ class BaseCurlAdapter(BaseAdapter):
 		self.stream_handler = (stream_handler or CurlStreamHandler)
 
 		if self.use_thread_local_curl:
+			self._local = threading.local()
+			try:
+				from .stream.handler._thread_env import _THREAD_ENV
+				if _THREAD_ENV == "gevent":
+					from gevent.local import local as gevent_local
+					self._local = gevent_local()
+			except Exception:
+				pass
 			self._local.curl = self.curl_class()
 		else:
 			self._curl = self.curl_class()
@@ -121,16 +130,20 @@ class BaseCurlAdapter(BaseAdapter):
 			return self._local.curl
 		return self._curl
 	
-	def reset_curl(self):
+	def reset_curl(self, curl: typing.Union[curl_cffi.Curl, pycurl.Curl, None] = None):
 		'''
 			Close current handle and open a new curl handle
 		'''
-		self.curl.close()
+		if curl is None:
+			curl = self.curl
+		curl.close()
 
 		if self.use_thread_local_curl:
 			self._local.curl = self.curl_class()
+			return self._local.curl
 		else:
 			self._curl = self.curl_class()
+			return self._curl
 
 	def enable_debug(self):
 		if self.debug:
@@ -566,14 +579,14 @@ class BaseCurlAdapter(BaseAdapter):
 	def send(
 		self, request: requests.PreparedRequest, stream=False, timeout=None, verify=True, cert=None, proxies=None
 	):
-		self.reset_curl()
+		curl = self.reset_curl()
 		
-		self.cert_verify(self.curl, request.url, verify, cert)
+		self.cert_verify(curl, request.url, verify, cert)
 
 		url = self.request_url(request, proxies)
 
 		self.set_curl_options(
-			self.curl,
+			curl,
 			request=request,
 			url=url,
 			timeout=timeout,
@@ -583,7 +596,7 @@ class BaseCurlAdapter(BaseAdapter):
 		try:
 			# Save headers when received
 			header_buffer = BytesIO()
-			self.curl.setopt(CurlOpt.HEADERDATA, header_buffer)
+			curl.setopt(CurlOpt.HEADERDATA, header_buffer)
 
 			# Callbacks for retrieving & saving curl info object
 			curl_info_dict: CurlInfo = {}
@@ -591,7 +604,7 @@ class BaseCurlAdapter(BaseAdapter):
 			# Perform curl request with threading, and return body in a 'read' like class type (by simply using Curl.WRITEFUNCTION callback)
 			start_curl_stream = (
 				self.stream_handler(
-					curl_instance=self.curl,
+					curl_instance=curl,
 					callback_after_perform=lambda curl: curl_info_dict.update(self.parse_info(curl)),
 					timeout=timeout,
 					debug=self.debug
@@ -599,13 +612,13 @@ class BaseCurlAdapter(BaseAdapter):
 			).start()
 			
 			# Headers are already available
-			curl_info_dict.update(self.parse_info(self.curl, headers_only=True))
+			curl_info_dict.update(self.parse_info(curl, headers_only=True))
 
 			if self.debug:
 				print("[DEBUG] Curl Start Elapsed Time: ", time.time() - a)
 
 			# Headers are available after start, parse them
-			parsed_headers = self.parse_headers(self.curl, header_buffer)
+			parsed_headers = self.parse_headers(curl, header_buffer)
 
 			curl_stream_res = CurlStreamResponse(
 				url=url,
@@ -616,7 +629,7 @@ class BaseCurlAdapter(BaseAdapter):
 				**parsed_headers
 			)
 
-			return self.build_response(self.curl, curl_stream_res, parsed_headers, request, wait_for_body=start_curl_stream._wait_for_body, curl_info_dict=curl_info_dict)
+			return self.build_response(curl, curl_stream_res, parsed_headers, request, wait_for_body=start_curl_stream._wait_for_body, curl_info_dict=curl_info_dict)
 		except OSError as e:
 			raise ConnectionError(e, request=request)
 		

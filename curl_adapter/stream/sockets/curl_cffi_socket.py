@@ -32,63 +32,81 @@ CURLMSG_DONE = 1
 GEVENT_READ = 1
 GEVENT_WRITE = 2
 
+_TIMER_CALLBACK_RETURNS_INT = ffi.typeof(lib.timer_function).result.cname != "void"
+_SOCKET_CALLBACK_RETURNS_INT = ffi.typeof(lib.socket_function).result.cname != "void"
+
+
+def _timer_callback_return():
+	return 0 if _TIMER_CALLBACK_RETURNS_INT else None
+
+
+def _socket_callback_return():
+	return 0 if _SOCKET_CALLBACK_RETURNS_INT else None
+
+
 @ffi.def_extern()
 def timer_function(curlm, timeout_ms: int, clientp: "GeventCurlCffi"):
+	try:
+		gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
 
-	gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
+		if gevent_curl._timer:
+			gevent_curl._timer.kill(block=False)
+			gevent_curl._timer = None
 
-	if gevent_curl._timer:
-		gevent_curl._timer.kill(block=False)
-		gevent_curl._timer = None
+		if not gevent_curl._curl_multi:
+			# Don't schedule timers if multi handle is gone.
+			return _timer_callback_return()
 
-	if not gevent_curl._curl_multi:
-		# Don't schedule timers if multi handle is gone.
-		return 0
+		if timeout_ms == -1:
+			# A timeout_ms value of -1 means you should delete the timer, we already did.
+			return _timer_callback_return()
 
-	if timeout_ms == -1:
-		# A timeout_ms value of -1 means you should delete the timer, we already did.
-		return 0
-
-	if timeout_ms == 0:
-		# immediate timeout; invoke directly
-		gevent_curl._timer = gevent.spawn(
-			gevent_curl._process_data, 
-			CURL_SOCKET_TIMEOUT, 
-			CURL_POLL_NONE
-		)
-	elif timeout_ms > 0:
-		# schedule one timer
-		# spawn a greenlet to run after timeout_ms milliseconds
-		gevent_curl._timer = gevent.spawn_later(
+		if timeout_ms == 0:
+			# immediate timeout; invoke directly
+			gevent_curl._timer = gevent.spawn(
+				gevent_curl._process_data,
+				CURL_SOCKET_TIMEOUT,
+				CURL_POLL_NONE
+			)
+		elif timeout_ms > 0:
+			# spawn a greenlet to run after timeout_ms milliseconds
+			gevent_curl._timer = gevent.spawn_later(
 				timeout_ms / 1000.0,
 				gevent_curl._process_data,
 				CURL_SOCKET_TIMEOUT,
 				CURL_POLL_NONE,
-		)
-	
-	return 0
-			
+			)
+	except Exception:
+		# Never raise from CFFI callbacks; Windows can show "Python-CFFI error" dialogs.
+		return _timer_callback_return()
+
+	return _timer_callback_return()
+
 @ffi.def_extern()
 def socket_function(curlm, sockfd: int, what: int, clientp: "GeventCurlCffi", data: Any):
-	gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
-	want_read  = bool(what & CURL_POLL_IN)
-	want_write = bool(what & CURL_POLL_OUT)
+	try:
+		gevent_curl: "GeventCurlCffi" = ffi.from_handle(clientp)
+		want_read = bool(what & CURL_POLL_IN)
+		want_write = bool(what & CURL_POLL_OUT)
 
-	# compute the new mask for gevent
-	new_mask = 0
-	if want_read:  new_mask |= GEVENT_READ
-	if want_write: new_mask |= GEVENT_WRITE
+		# compute the new mask for gevent
+		new_mask = 0
+		if want_read:
+			new_mask |= GEVENT_READ
+		if want_write:
+			new_mask |= GEVENT_WRITE
 
-	# teardown if libcurl says “remove”
-	if what & CURL_POLL_REMOVE:
-		gevent_curl._update_watcher(sockfd, 0)
-		return 0
+		if what & CURL_POLL_REMOVE:
+			gevent_curl._update_watcher(sockfd, 0)
+			return _socket_callback_return()
 
-	# otherwise install/update the watcher
-	gevent_curl._update_watcher(sockfd, new_mask)
+		gevent_curl._update_watcher(sockfd, new_mask)
+	except Exception:
+		# Never raise from CFFI callbacks; Windows can show "Python-CFFI error" dialogs.
+		return _socket_callback_return()
 
-	return 0
-	
+	return _socket_callback_return()
+
 class GeventCurlCffi:
 	'''
 		Usage:

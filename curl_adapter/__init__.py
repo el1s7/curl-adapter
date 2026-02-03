@@ -9,10 +9,11 @@ A curl HTTP adapter for requests library
 __all__ = [
     "CurlCffiAdapter",
     "PyCurlAdapter",
-    "CurlInfo"
+    "CurlInfo",
+    "get_curl_info"
 ]
 
 
-from .base_adapter import CurlInfo
+from .base_adapter import CurlInfo, get_curl_info
 from .curl_cffi import CurlCffiAdapter
 from .pycurl import PyCurlAdapter

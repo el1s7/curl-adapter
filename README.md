@@ -86,7 +86,7 @@ with requests.Session() as s:
 You can get extra information from the curl response info:
 ```python
 import requests
-from curl_adapter import PyCurlAdapter, CurlInfo
+from curl_adapter import PyCurlAdapter, get_curl_info
 
 with requests.Session() as s:
     s.mount("http://", PyCurlAdapter())
@@ -96,7 +96,7 @@ with requests.Session() as s:
 
     body = response.text
 
-    curl_info: CurlInfo = response.curl_info
+    curl_info = get_curl_info(response)
 
     print(
         curl_info

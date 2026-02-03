@@ -191,10 +191,11 @@ class CurlCffiAdapter(BaseCurlAdapter):
 				)
 	
 	def reset_curl(self):
-		if hasattr(self.curl, 'clean_handles_and_buffers'):
+		curl = self.curl
+		if hasattr(curl, 'clean_handles_and_buffers'):
 			# curl_cffi >= 0.14.0: clean_after_perform() was renamed to clean_handles_and_buffers()
-			self.curl.clean_handles_and_buffers()
-		elif hasattr(self.curl, 'clean_after_perform'):
+			curl.clean_handles_and_buffers()
+		elif hasattr(curl, 'clean_after_perform'):
 			# curl_cffi < 0.14.0
-			self.curl.clean_after_perform()
-		return super().reset_curl()
+			curl.clean_after_perform()
+		return super().reset_curl(curl=curl)
