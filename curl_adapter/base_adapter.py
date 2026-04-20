@@ -439,14 +439,31 @@ class BaseCurlAdapter(BaseAdapter):
 		'''
 
 		return urldefragauth(request.url)
+
+	def _get_request_adapter_options(self, request: requests.PreparedRequest) -> dict:
+		"""
+			Read per-request adapter flags from internal request headers.
+		"""
+		options = {}
+
+		header_value = request.headers.pop("X-Curl-Adapter-Disable-Tunnel-Reuse", None)
+		if header_value is not None:
+			options["disable_tunnel_reuse"] = str(header_value).strip().lower() in (
+				"1", "true", "yes", "on"
+			)
+
+		return options
 	
 	def set_curl_options(self, 
 			curl: typing.Union[curl_cffi.Curl, pycurl.Curl], 
 			request: requests.PreparedRequest,
 			url:str, 
 			timeout, 
-			proxies
+			proxies,
+			request_adapter_options=None
 		):
+		request_adapter_options = request_adapter_options or {}
+		disable_tunnel_reuse = bool(request_adapter_options.get("disable_tunnel_reuse", False))
 		
 		if self.debug:
 			print("[DEBUG] Sending: ", url, request.headers, timeout, proxies)
@@ -563,6 +580,10 @@ class BaseCurlAdapter(BaseAdapter):
 				if proxy_url.scheme == "https":
 					# For https site with http tunnel proxy, tell curl to enable tunneling
 					curl.setopt(CurlOpt.HTTPPROXYTUNNEL, 1)
+
+			if disable_tunnel_reuse:
+				curl.setopt(CurlOpt.FRESH_CONNECT, 1)
+				curl.setopt(CurlOpt.FORBID_REUSE, 1)
 	
 		
 		# content decoding
@@ -584,13 +605,15 @@ class BaseCurlAdapter(BaseAdapter):
 		self.cert_verify(curl, request.url, verify, cert)
 
 		url = self.request_url(request, proxies)
+		request_adapter_options = self._get_request_adapter_options(request)
 
 		self.set_curl_options(
 			curl,
 			request=request,
 			url=url,
 			timeout=timeout,
-			proxies=proxies
+			proxies=proxies,
+			request_adapter_options=request_adapter_options
 		)
 		a = time.time()
 		try:

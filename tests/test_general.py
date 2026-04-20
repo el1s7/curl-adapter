@@ -214,3 +214,21 @@ def test_thread_local_curl_isolated_per_adapter_instance(adapter_class):
 		adapter_two.close()
 
 
+@pytest.mark.parametrize("adapter_class", [CurlCffiAdapter, PyCurlAdapter])
+def test_disable_tunnel_reuse_header_option(adapter_class):
+	adapter = adapter_class(stream_handler=CurlStreamHandlerBase)
+	try:
+		prepared = requests.Request(
+			"GET",
+			f"{test_server}/get",
+			headers={"X-Curl-Adapter-Disable-Tunnel-Reuse": "TrUe"},
+		).prepare()
+
+		options = adapter._get_request_adapter_options(prepared)
+
+		assert options["disable_tunnel_reuse"] is True
+		assert "X-Curl-Adapter-Disable-Tunnel-Reuse" not in prepared.headers
+	finally:
+		adapter.close()
+
+

@@ -160,9 +160,9 @@ class CurlCffiAdapter(BaseCurlAdapter):
 		curl.setopt(CurlOpt.STREAM_WEIGHT, fp.http2_stream_weight)
 		curl.setopt(CurlOpt.STREAM_EXCLUSIVE, fp.http2_stream_exclusive)
 
-	def set_curl_options(self, curl, request, url, timeout, proxies):
+	def set_curl_options(self, curl, request, url, timeout, proxies, request_adapter_options=None):
 		
-		super().set_curl_options(curl, request, url, timeout, proxies)
+		super().set_curl_options(curl, request, url, timeout, proxies, request_adapter_options=request_adapter_options)
 
 		# impersonate
 		curl.impersonate(
