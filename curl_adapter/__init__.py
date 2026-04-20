@@ -17,3 +17,8 @@ __all__ = [
 from .base_adapter import CurlInfo, get_curl_info
 from .curl_cffi import CurlCffiAdapter
 from .pycurl import PyCurlAdapter
+from importlib import metadata
+
+__title__ = "curl_adapter"
+__description__ = metadata.metadata("curl_adapter")["Summary"]
+__version__ = metadata.version("curl_adapter")
