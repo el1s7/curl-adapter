@@ -9,6 +9,7 @@ from gevent.pywsgi import WSGIServer
 import pytest
 import requests
 import requests.adapters
+from curl_cffi.const import CurlHttpVersion
 from curl_adapter import CurlCffiAdapter, PyCurlAdapter, CurlInfo
 from curl_adapter.stream.handler.gevent_handler import CurlStreamHandlerGevent
 from curl_adapter.stream.handler.threads_handler import CurlStreamHandlerThreads
@@ -266,5 +267,20 @@ def test_disable_tunnel_reuse_header_option(adapter_class):
 		assert "X-Curl-Adapter-Disable-Tunnel-Reuse" not in prepared.headers
 	finally:
 		adapter.close()
+
+
+@pytest.mark.parametrize("http_version, expected_version", [
+	("v1", CurlHttpVersion.V1_1),
+	("v2", CurlHttpVersion.V2_0),
+])
+def test_curl_cffi_http_version_initializer_affects_response_http_version(http_version, expected_version):
+	with requests.Session() as s:
+		s.mount("http://", CurlCffiAdapter(http_version=http_version))
+		s.mount("https://", CurlCffiAdapter(http_version=http_version))
+
+		r = s.get(f"{test_server}/get", timeout=10)
+
+		assert r.status_code == 200
+		assert int(r.raw.version) == int(expected_version)
 
 

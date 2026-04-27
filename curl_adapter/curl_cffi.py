@@ -12,7 +12,11 @@ from curl_cffi.requests.impersonate import (
 	ExtraFingerprints,
 	normalize_browser_type,
 	toggle_extension,
-	BrowserTypeLiteral
+	BrowserTypeLiteral,
+)
+from curl_cffi.requests.utils import (
+	HttpVersionLiteral,
+	normalize_http_version
 )
 
 from .stream.handler.base import CurlStreamHandlerBase
@@ -29,8 +33,10 @@ class CurlAdapterConfigurationOptions(TypedDict):
 class CurlCffiAdapter(BaseCurlAdapter):
 
 	def __init__(self, 
+			*,
 			impersonate_browser_type: BrowserTypeLiteral="chrome", 
 			tls_configuration_options: CurlAdapterConfigurationOptions=None,
+			http_version: HttpVersionLiteral | None = None,
 			debug=False, 
 			use_curl_content_decoding=False, 
 			use_thread_local_curl=True,
@@ -38,8 +44,8 @@ class CurlCffiAdapter(BaseCurlAdapter):
 		):
 
 		self.impersonate_browser_type = impersonate_browser_type
-		
 		self.configuration_options = tls_configuration_options
+		self.http_version = http_version
 
 		super().__init__(curl_cffi.Curl, debug, use_curl_content_decoding, use_thread_local_curl, stream_handler)
 
@@ -161,7 +167,6 @@ class CurlCffiAdapter(BaseCurlAdapter):
 		curl.setopt(CurlOpt.STREAM_EXCLUSIVE, fp.http2_stream_exclusive)
 
 	def set_curl_options(self, curl, request, url, timeout, proxies, request_adapter_options=None):
-		
 		super().set_curl_options(curl, request, url, timeout, proxies, request_adapter_options=request_adapter_options)
 
 		# impersonate
@@ -189,7 +194,12 @@ class CurlCffiAdapter(BaseCurlAdapter):
 					curl,
 					self.configuration_options.get("extra_fp")
 				)
-	
+		
+		# HTTP Version
+		if self.http_version:
+			curl_http_version = normalize_http_version(self.http_version)
+			curl.setopt(CurlOpt.HTTP_VERSION, curl_http_version)
+
 	def reset_curl(self):
 		curl = self.curl
 		if hasattr(curl, 'clean_handles_and_buffers'):
