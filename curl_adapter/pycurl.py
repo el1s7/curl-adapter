@@ -4,7 +4,8 @@ from .stream.handler.base import CurlStreamHandlerBase
 
 class PyCurlAdapter(BaseCurlAdapter):
 
-	def __init__(self, 
+	def __init__(self,
+			*, 
 			debug=False, 
 			use_curl_content_decoding=False, # pyCurl automatic decoding is disabled by default. Because pycurl doesnt support modern decoding algorithms...
 			use_thread_local_curl=True,
