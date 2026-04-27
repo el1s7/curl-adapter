@@ -485,7 +485,6 @@ class BaseCurlAdapter(BaseAdapter):
 		
 		if isinstance(timeout, tuple):
 			connect_timeout, read_timeout = timeout
-			all_timeout = connect_timeout + read_timeout
 
 			curl.setopt(CurlOpt.CONNECTTIMEOUT_MS, int(connect_timeout * 1000))
 	
@@ -493,7 +492,7 @@ class BaseCurlAdapter(BaseAdapter):
 		
 			# trick from: https://github.com/lexiforest/curl_cffi/issues/156
 			curl.setopt(CurlOpt.LOW_SPEED_LIMIT, 1)
-			curl.setopt(CurlOpt.LOW_SPEED_TIME, math.ceil(all_timeout))
+			curl.setopt(CurlOpt.LOW_SPEED_TIME, math.ceil(read_timeout))
 	
 		elif isinstance(timeout, (int, float)):
 
