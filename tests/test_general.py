@@ -1,8 +1,11 @@
 '''
 	Just run: pytest
 '''
+from contextlib import contextmanager
 from functools import partial
 
+import gevent
+from gevent.pywsgi import WSGIServer
 import pytest
 import requests
 import requests.adapters
@@ -13,6 +16,27 @@ from curl_adapter.stream.handler.base import CurlStreamHandlerBase
 
 test_server = "https://httpbingo.org" #httpbin.org, httpbingo.org, postman-echo.com
 
+@contextmanager
+def run_stall_stream_server():
+	def app(environ, start_response):
+		if environ.get("PATH_INFO", "/") != "/stall-stream":
+			start_response("404 Not Found", [("Content-Type", "text/plain")])
+			yield b"not found"
+			return
+
+		start_response("200 OK", [("Content-Type", "text/plain")])
+		yield b"X"
+		# Keep the connection open to simulate a stalled stream body.
+		gevent.sleep(30)
+		return
+
+	server = WSGIServer(("127.0.0.1", 0), app, log=None)
+	server.start()
+
+	try:
+		yield f"http://{server.server_host}:{server.server_port}"
+	finally:
+		server.stop(timeout=1)
 
 def bind_handler(adapter, stream_handler):
 	def binded(*args, **kwargs):
@@ -200,6 +224,18 @@ class TestFunctions:
 			s.verify = False
 			r = s.get("https://expired.badssl.com/", timeout=10)
 			assert r.status_code == 200
+
+def test_gevent_curl_cffi_wait_for_body_stall_timeout_no_hang():
+	with run_stall_stream_server() as local_server:
+		with requests.Session() as s:
+			s.mount("http://", CurlCffiAdapter(stream_handler=CurlStreamHandlerGevent))
+			s.mount("https://", CurlCffiAdapter(stream_handler=CurlStreamHandlerGevent))
+
+			for _ in range(8):
+				r = s.get(f"{local_server}/stall-stream", timeout=(0.2, 0.8), stream=True)
+				assert r.status_code == 200
+				with gevent.Timeout(12, RuntimeError("wait_for_body timed out")):
+					r.wait_for_body()
 
 
 @pytest.mark.parametrize("adapter_class", [CurlCffiAdapter, PyCurlAdapter])
