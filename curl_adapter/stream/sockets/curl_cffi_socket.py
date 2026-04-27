@@ -254,7 +254,9 @@ class GeventCurlCffi:
 	def _force_timeout(self):
 		while self._curl_multi:
 			gevent.sleep(1)
-			self._socket_action(CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
+			# Drive socket action and drain completion/error messages.
+			# Without draining info_read, a transfer can finish without resolving its AsyncResult.
+			self._process_data(CURL_SOCKET_TIMEOUT, CURL_POLL_NONE)
 
 	def _pop_future(self, curl: Curl):
 		lib.curl_multi_remove_handle(self._curl_multi, curl._curl)
