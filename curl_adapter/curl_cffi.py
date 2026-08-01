@@ -10,10 +10,21 @@ from curl_cffi.requests.impersonate import (
 	TLS_EC_CURVES_MAP,
 	TLS_VERSION_MAP,
 	ExtraFingerprints,
-	normalize_browser_type,
-	toggle_extension,
 	BrowserTypeLiteral,
 )
+
+try:
+	# curl_cffi >= 0.16.0
+	from curl_cffi.requests.impersonate import resolve_latest_browser_type as normalize_browser_type
+except ImportError:
+	# curl_cffi < 0.16.0
+	from curl_cffi.requests.impersonate import normalize_browser_type
+
+try:
+	from curl_cffi.requests.impersonate import toggle_extension
+except ImportError:
+	# curl_cffi >= 0.16.0: removed, the explicit extension order acts as an allowlist
+	toggle_extension = None
 from curl_cffi.requests.utils import (
 	HttpVersionLiteral,
 	normalize_http_version
@@ -69,6 +80,11 @@ class CurlCffiAdapter(BaseCurlAdapter):
 		"""
 
 		def toggle_extensions_by_ids(curl: curl_cffi.Curl, extension_ids):
+			if toggle_extension is None:
+				# curl_cffi >= 0.16.0 dropped per-extension toggling, setting
+				# TLS_EXTENSION_ORDER below already acts as an allowlist.
+				return
+
 			# TODO: find a better representation, rather than magic numbers
 			default_enabled = {0, 51, 13, 43, 65281, 23, 10, 45, 35, 11, 16}
 
@@ -159,12 +175,24 @@ class CurlCffiAdapter(BaseCurlAdapter):
 		if fp.tls_signature_algorithms:
 			curl.setopt(CurlOpt.SSL_SIG_HASH_ALGS, ",".join(fp.tls_signature_algorithms))
 
-		curl.setopt(CurlOpt.SSLVERSION, fp.tls_min_version | CurlSslVersion.MAX_DEFAULT)
-		curl.setopt(CurlOpt.TLS_GREASE, int(fp.tls_grease))
-		curl.setopt(CurlOpt.SSL_PERMUTE_EXTENSIONS, int(fp.tls_permute_extensions))
-		curl.setopt(CurlOpt.SSL_CERT_COMPRESSION, fp.tls_cert_compression)
-		curl.setopt(CurlOpt.STREAM_WEIGHT, fp.http2_stream_weight)
-		curl.setopt(CurlOpt.STREAM_EXCLUSIVE, fp.http2_stream_exclusive)
+		# curl_cffi >= 0.16.0 defaults all of these to None, only set what is given
+		if fp.tls_min_version is not None:
+			curl.setopt(CurlOpt.SSLVERSION, fp.tls_min_version | CurlSslVersion.MAX_DEFAULT)
+
+		if fp.tls_grease is not None:
+			curl.setopt(CurlOpt.TLS_GREASE, int(fp.tls_grease))
+
+		if fp.tls_permute_extensions is not None:
+			curl.setopt(CurlOpt.SSL_PERMUTE_EXTENSIONS, int(fp.tls_permute_extensions))
+
+		if fp.tls_cert_compression is not None:
+			curl.setopt(CurlOpt.SSL_CERT_COMPRESSION, fp.tls_cert_compression)
+
+		if fp.http2_stream_weight is not None:
+			curl.setopt(CurlOpt.STREAM_WEIGHT, fp.http2_stream_weight)
+
+		if fp.http2_stream_exclusive is not None:
+			curl.setopt(CurlOpt.STREAM_EXCLUSIVE, fp.http2_stream_exclusive)
 
 	def set_curl_options(self, curl, request, url, timeout, proxies, request_adapter_options=None):
 		super().set_curl_options(curl, request, url, timeout, proxies, request_adapter_options=request_adapter_options)
