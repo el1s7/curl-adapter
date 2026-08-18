@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "curl_adapter"
-version = "1.2.1"
+version = "1.2.2"
 description = "A curl HTTP adapter switch for requests library — make browser-like requests with custom TLS fingerprints."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ authors = [{name = "Elis K.", email = "github@elis.cc"}]
 keywords = ["curl", "requests", "adapter", "tls fingerprint", "pycurl", "curl_cffi", "curl impersonate"]
 dependencies = [
     "requests",
-    "curl_cffi >= 0.14.0",
+    "curl_cffi >= 0.14.0, < 0.17.0",
     "pycurl >= 7.45.5",
     "brotli"
 ]
