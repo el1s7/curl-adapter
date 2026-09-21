@@ -163,6 +163,7 @@ class CurlStreamResponse(HTTPResponse):
 		self.auto_close = auto_close
 
 		self._decoder = None
+		self._decoder_initialized = False
 
 		self._fp = curl_stream_handler
 		self._fp_bytes_read = 0
